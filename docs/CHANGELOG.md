@@ -2,6 +2,13 @@
 
 Newest first. Each entry: the date, what changed, and why.
 
+## 2026-11-20 Models in Settings
+
+- Settings > Models: "Use for bots" makes a model the one bots use when they have no model of their own (routing
+  `chat`), and "Remove" deletes a model added in Settings; bots that used it go back to the default, and its key is
+  deleted when no other model needs it (`setup.set_default`, `setup.remove_model`, `POST /api/models`). Why: models
+  could be added but never removed or made the default.
+
 ## 2026-11-20 Version 1.0.0
 
 - Version 1.0.0: the first complete release for Windows, Linux and macOS (the Mac version is still untested on a

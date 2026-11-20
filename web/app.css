@@ -889,6 +889,7 @@ b.plus { color: var(--good); font-weight: 750; } b.minus { color: var(--bad); fo
 .model-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .model-main .muted { font-size: 14px; overflow-wrap: anywhere; }
 .model-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.model-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .tag { font-size: 14px; padding: 2px 8px; border-radius: 999px; background: var(--surface-2); color: var(--muted); }
 .tag.good { color: var(--good); background: var(--good-soft); }
 .tag.bad { color: var(--bad); background: var(--bad-soft); }

@@ -3186,12 +3186,26 @@
   function modelsCard() {
     const models = S.models || [];
     if (!models.length) return null;
+    const run = async (body, done) => {
+      try { await api("/api/models", body); await load(); render(); if (done) toast(done); } catch (e) { fail(e); }
+    };
+    const actions = (m) => {
+      const uses = m.default_for || [];
+      const out = [];
+      if (models.length > 1 && !uses.includes("chat")) out.push(h("button", { class: "btn ghost small", type: "button",
+        onclick: () => run({ action: "default", name: m.name }, t("settings.models.defaulted", { name: m.label })) }, icon("check"), t("settings.models.makedefault")));
+      if (!uses.length) out.push(h("button", { class: "btn ghost small", type: "button", onclick: async () => {
+        if (await confirmSheet(t("settings.models.remove.title", { name: m.label }), t("settings.models.remove.body"), t("settings.models.remove"))) run({ action: "remove", name: m.name });
+      } }, icon("trash"), t("settings.models.remove")));
+      return out.length ? h("div", { class: "model-actions" }, out) : null;
+    };
     return h("div", { class: "card form models" }, h("h3", { class: "card-h" }, icon("brain"), t("settings.models")),
       h("div", { class: "model-rows" }, models.map((m) => h("div", { class: "model-row" },
         h("div", { class: "model-main" }, h("b", {}, m.label), h("span", { class: "muted" }, (m.kind === "snapscribe" ? m.provider_label : m.provider + " · " + m.model) + " · " + t("settings.models.ctx", { n: m.context_limit % 1024 === 0 ? (m.context_limit / 1024) + "K" : num(m.context_limit) }))),
         h("div", { class: "model-tags" },
           (m.default_for || []).filter((k) => k !== "default").map((k) => h("span", { class: "tag" }, t("settings.models.for." + k))),
-          h("span", { class: "tag " + (m.key_set ? "good" : "bad") }, t(m.key_set ? "settings.models.key" : "settings.models.nokey")))))),
+          h("span", { class: "tag " + (m.key_set ? "good" : "bad") }, t(m.key_set ? "settings.models.key" : "settings.models.nokey"))),
+        actions(m)))),
       h("p", { class: "hint" }, t("settings.models.hint")),
       h("p", { class: "hint" }, t("providers.notice")),
       h("a", { class: "btn", href: "/setup#add" }, t("providers.add")));

@@ -155,6 +155,68 @@ def configure(app, body, *, add=False):
         return {"configured": True}
 
 
+def _persist(app, providers, models, routing):
+    """Check and save a changed model list in provider.json, then use it at once. The "api" block is kept."""
+    candidate = {**app.cfg, "providers": providers, "models": models, "routing": routing}
+    registry = ModelRegistry(candidate, app.slots, app.redactor, app.usage)
+    saved = app.store.path("provider.json")
+    previous = app.store.read_json("provider.json", {}) if saved.exists() else {}
+    if saved.exists():
+        shutil.copy2(saved, saved.with_name("provider.json.bak-" + str(time.time_ns())))
+    overlay = {"providers": providers, "models": models, "routing": routing}
+    if "api" in previous:
+        overlay["api"] = previous["api"]
+    app.store.write_json("provider.json", overlay)
+    app.cfg.update(overlay)
+    registry.cfg = app.cfg
+    app.models = registry
+    return {"models": registry.view(), "routing": app.cfg["routing"]}
+
+
+def set_default(app, name):
+    """Make a model the one bots use when they have no model of their own (routing "chat")."""
+    with _LOCK:
+        if name not in app.cfg["models"]:
+            raise LookupError("no such model")
+        routing = {**app.cfg["routing"], "chat": name}
+        return _persist(app, copy.deepcopy(app.cfg["providers"]), copy.deepcopy(app.cfg["models"]), routing)
+
+
+def remove_model(app, name):
+    """Remove a model added in Settings. Bots that used it go back to the default; an unused key is deleted."""
+    with _LOCK:
+        models = copy.deepcopy(app.cfg["models"])
+        if name not in models:
+            raise LookupError("no such model")
+        uses = sorted(k for k, v in app.cfg["routing"].items() if v == name)
+        if uses:
+            raise ValueError("This model is a default (" + ", ".join(uses) + "). Make another model the default first.")
+        added = (app.store.read_json("provider.json", {}) or {}).get("models") or {}
+        if name not in added:
+            raise ValueError("This model comes from config.json. Remove it there.")
+        pname = models.pop(name)["provider"]
+        providers = copy.deepcopy(app.cfg["providers"])
+        dropped_env = None
+        if not any(m.get("provider") == pname for m in models.values()):
+            dropped = providers.pop(pname, None) or {}
+            env = dropped.get("api_key_env") or ""
+            still_used = any(p.get("api_key_env") == env for p in providers.values()) or \
+                (app.cfg.get("api") or {}).get("api_key_env") == env
+            if env.startswith("SNAPLAB_") and not still_used:
+                dropped_env = env
+        result = _persist(app, providers, models, copy.deepcopy(app.cfg["routing"]))
+        for bot in app.store.bots():
+            if bot.get("model") == name:
+                bot["model"] = None
+                app.store.save_bot(bot)
+        if dropped_env:
+            try:
+                credentials.delete_credential(dropped_env)
+            except Exception:
+                pass
+        return result
+
+
 def context_limit(body):
     try:
         value = int(body.get("context_limit") or 32768)

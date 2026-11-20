@@ -668,6 +668,14 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/providers":
             from .setup import configure
             return configure(app, b, add=True)
+        if path == "/api/models":
+            from .setup import remove_model, set_default
+            action = str(b.get("action") or "")
+            if action == "default":
+                return set_default(app, s("name"))
+            if action == "remove":
+                return remove_model(app, s("name"))
+            raise ValueError("unknown action")
         if path == "/api/settings":
             changes = {}
             if b.get("lang") in i18n.codes():
