@@ -563,10 +563,17 @@ class Handler(BaseHTTPRequestHandler):
         except ValueError as e:
             self.send_json(404, {"ok": False, "error": str(e)})
             return
+        q = parse_qs(urlsplit(self.path).query)
+        phone = None
+        try:
+            if (q.get("phone") or [""])[0] == "1":
+                phone = (max(240, min(800, int(q["vw"][0]))), max(320, min(1400, int(q["vh"][0]))))
+        except (KeyError, ValueError, IndexError):
+            phone = None
         self.close_connection = True
         self._headers(200, "text/event-stream; charset=utf-8", None,
                       {"X-Accel-Buffering": "no", "Connection": "close", "Cache-Control": "no-store"})
-        lb.add_viewer()
+        lb.add_viewer(phone)
         seq = version = 0
         try:
             state = lb.view()
@@ -597,7 +604,7 @@ class Handler(BaseHTTPRequestHandler):
         except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError, OSError):
             pass
         finally:
-            lb.remove_viewer()
+            lb.remove_viewer(phone)
 
     # ------------------------------------------------------------ POST
 
@@ -751,8 +758,8 @@ class Handler(BaseHTTPRequestHandler):
             if action == "dialog":
                 lb.answer_dialog(b.get("accept") is True, s("text"))
                 return {}
-            if action == "close":
-                lb.end(wait=False)
+            if action == "close":                  # Chrome takes a few seconds to write its profile and exit
+                threading.Thread(target=lb.end, kwargs={"wait": False}, daemon=True).start()
                 return {}
             raise ValueError("unknown action")
         if path == "/api/models":

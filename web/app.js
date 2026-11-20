@@ -845,9 +845,9 @@
       $(".bp-veil-text", veil).textContent = state.error ? state.error : t(state.status === "waiting" ? "browser.waiting" : "browser.starting");
       chip.className = "chip bp-chip " + (state.holder === "user" ? "good" : "");
       chip.textContent = !ready ? t("browser.connecting") : state.mode === "host" ? t("browser.host") : state.holder === "user" ? t("browser.you") : t("browser.agent");
-      control.classList.toggle("hide", state.mode !== "turn" || !ready);
       control.textContent = state.holder === "user" ? t("browser.handback") : t("browser.takeover");
       control.className = "btn " + (state.holder === "user" ? "ghost" : "primary");
+      control.classList.toggle("hide", state.mode !== "turn" || !ready);     // no agent between turns
       canvas.classList.toggle("can-input", !!state.can_input);
       [...navButtons, url, tabsBtn, typing].forEach((el) => (el.disabled = !state.can_input));
       showDialog();
@@ -943,7 +943,9 @@
       h("p", { class: "hint bp-note" }, t("browser.note")));
     screen({ back: "#/session/" + sid, title: t("browser.title") + (sess.title ? " · " + sess.title : ""), cls: "browser", noTabs: true }, body);
     paintState();
-    const es = new EventSource("/api/browser/" + sid + "/live");
+    // A phone gets pages laid out for its screen while it holds the browser.
+    const narrow = (window.innerWidth || 1024) < 700;
+    const es = new EventSource("/api/browser/" + sid + "/live" + (narrow ? "?phone=1&vw=" + Math.round(window.innerWidth) + "&vh=" + Math.round((window.innerHeight || 800) * 0.62) : ""));
     es.addEventListener("frame", (e) => { try { draw(JSON.parse(e.data)); } catch (err) { /* a broken frame is skipped */ } });
     es.addEventListener("state", (e) => { try { state = JSON.parse(e.data); paintState(); } catch (err) { /* ignored */ } });
     browserLive = es;

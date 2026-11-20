@@ -64,6 +64,11 @@ await body.querySelector(".bp-bar").emit("submit");
 await settle();
 assert.deepEqual(posts().at(-1), { action: "nav", to: "go", url: "example.org" });
 
+// Between turns there is no agent to hand back to.
+state({ status: "ready", mode: "host", holder: "user", can_input: true, version: 3, tabs: [] });
+assert.equal(chip.textContent, "browser.host");
+assert.ok(control.className.includes("hide"));
+
 // Leaving the panel closes the stream.
 ui.closeBrowserStream();
 assert.equal(sources[0].closed, true);

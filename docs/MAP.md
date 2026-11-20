@@ -81,7 +81,10 @@ flowchart LR
   for the agent. The DevTools protocol goes through SSH and the job's `.snaplab/live.sock` (`browser.mjs --live`);
   the debugging port never leaves the job. Frames (Page.startScreencast, JPEG, only while someone watches) and the
   state go to the page as server-sent events (`/api/browser/<id>/live`); input is `POST /api/browser/<id>`. While
-  the user holds control, `browser.mjs` and `desktop.py` input wait. Typed text is never logged or archived.
+  the user holds control, `browser.mjs` and `desktop.py` input wait, and a phone viewer gets pages laid out for its
+  screen (device-metrics emulation, cleared on hand back). A turn that starts while the panel's own browser runs
+  closes it first (Chrome exits cleanly, so cookies are written); the turn's worker waits up to 90 s for the job
+  lock. Typed text is never logged or archived.
 - `harnesses/base.py`, `contract.py`: the harness interface and its check.
 - `harnesses/codex.py`, `pi.py`, `bot.py`, `tests.py`: the harnesses (Codex, Pi, bot only, tests only).
 - `harnesses/wsl.py`, `wsl_network.py`, `wsl_runtime.py`: starting and sharing the WSL workspace, its network relay

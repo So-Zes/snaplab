@@ -612,7 +612,17 @@ def main():
     locks = home / ".local" / "state" / "snaplab-locks"
     locks.mkdir(parents=True, exist_ok=True)
     with (locks / sid).open("w") as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        # SnapLab's browser panel may still be closing its own browser in this job (remote_worker.live, host mode):
+        # wait for it a little instead of failing the turn.
+        waited = time.monotonic()
+        while True:
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if time.monotonic() - waited > 90:
+                    raise
+                time.sleep(0.5)
         global OWNER, OWNER_DATA
         OWNER = locks / (sid + '.owner.json')
         OWNER_DATA = {'pid': os.getpid(), 'start': Path('/proc/self/stat').read_text().rsplit(')', 1)[1].split()[19], 'groups': []}
@@ -774,7 +784,7 @@ def host_job(req, folder, home, stop):
         emit({"kind": "host_failed", "error_type": type(exc).__name__})
     finally:
         emit({"kind": "host_ended", "exit_code": code})
-        stop.set()
+        stop.set()                              # here: the host job's own cancel event
 
 
 def connect_live(path, stop, ask, timeout):
@@ -807,7 +817,10 @@ def connect_live(path, stop, ask, timeout):
 
 
 def pump(conn, stop):
-    """DevTools lines both ways: SnapLab's commands from stdin to the browser, its answers and events to stdout."""
+    """DevTools lines both ways: SnapLab's commands from stdin to the browser, its answers and events to stdout.
+    Returns "eof" when SnapLab closed the connection, "socket" when the browser side did."""
+    closed_by = {"who": "socket"}
+
     def from_browser():
         try:
             for line in conn.makefile("rb"):
@@ -831,7 +844,8 @@ def pump(conn, stop):
                 continue
             chunk = os.read(sys.stdin.fileno(), 1 << 16)
             if not chunk:
-                break                                   # SnapLab closed the panel's connection
+                closed_by["who"] = "eof"                # SnapLab closed the panel's connection
+                break
             pending += chunk
             if len(pending) > 16 * 1024 * 1024:
                 raise ValueError("oversized message")
@@ -846,6 +860,7 @@ def pump(conn, stop):
         except OSError:
             pass
         reader.join(timeout=2)
+    return closed_by["who"]
 
 
 def live(req, home):
@@ -855,7 +870,8 @@ def live(req, home):
     sid = req["sid"]
     jobs = home / "jobs"
     folder = jobs / sid
-    stop = threading.Event()
+    stop = threading.Event()                    # the panel's connection
+    cancel = threading.Event()                  # the host job (kept separate: Chrome must finish writing first)
     job = lock = None
     try:
         if req.get("host"):
@@ -871,21 +887,37 @@ def live(req, home):
             except BlockingIOError:
                 emit({"kind": "busy"})                  # a turn holds the job: attach to it instead
                 return 0
-            job = threading.Thread(target=host_job, args=(req, folder, home, stop), daemon=True)
+            job = threading.Thread(target=host_job, args=(req, folder, home, cancel), daemon=True)
             job.start()
         elif folder.is_symlink() or not folder.is_dir():
             emit({"kind": "nojob"})
             return 0
-        conn = connect_live(folder / ".snaplab" / "live.sock", stop, ask=not req.get("host"),
+        else:
+            # No turn holds the job (it ended, or has not started): SnapLab runs the browser itself instead.
+            locks = home / ".local" / "state" / "snaplab-locks"
+            if not (locks / sid).exists():
+                emit({"kind": "noturn"})
+                return 0
+            with (locks / sid).open("a") as probe:
+                try:
+                    fcntl.flock(probe, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    fcntl.flock(probe, fcntl.LOCK_UN)
+                    emit({"kind": "noturn"})
+                    return 0
+                except BlockingIOError:
+                    pass
+        conn = connect_live(folder / ".snaplab" / "live.sock", cancel if job else stop, ask=not req.get("host"),
                             timeout=float(req.get("wait_s") or 120))
         if conn is None:
             emit({"kind": "nobrowser"})
             return 0
         emit({"kind": "connected", "host": bool(req.get("host"))})
-        pump(conn, stop)
+        if pump(conn, stop) == "socket" and job is not None:
+            job.join(timeout=40)                # the browser closed (Browser.close): its job ends by itself
         return 0
     finally:
         stop.set()
+        cancel.set()
         if job is not None:
             job.join(timeout=30)
         if lock is not None:

@@ -16,6 +16,8 @@ Newest first. Each entry: the date, what changed, and why.
 - The browser profile restores its tabs, and kept processes get five seconds to exit after SIGTERM, so cookies and
   tabs are written. While the user holds control, `browser.mjs open/do` and `desktop.py` input wait (up to 15
   minutes) and then tell the agent to look again.
+- On a phone, pages are laid out for the phone's screen while the user holds the browser. A turn's worker waits up to
+  90 s for its job instead of failing when the panel's browser is still closing.
 
 ## 2026-11-20 Claude and ChatGPT apps, Google Gemini
 

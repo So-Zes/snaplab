@@ -106,6 +106,20 @@ class LiveBrowserTest(Base):
         self.app.browsers.after_turn(SID)
         self.assertFalse(self.app.browsers.turn_running(SID))
 
+    def test_phone_layout_only_while_the_user_holds_it(self):
+        self.app.browsers.before_turn(SID)
+        lb = self.app.browsers.get(SID)
+        lb.add_viewer((390, 520))
+        self.assertTrue(wait_until(lambda: lb.view()["status"] == "ready", 10))
+        self.assertNotIn("Emulation.setDeviceMetricsOverride", self.methods())      # the agent's turn: its own size
+        lb.control("user")
+        self.assertTrue(wait_until(lambda: "Emulation.setDeviceMetricsOverride" in self.methods(), 5))
+        override = [m for m in self.sent() if m.get("method") == "Emulation.setDeviceMetricsOverride"][-1]["params"]
+        self.assertEqual((override["width"], override["height"], override["mobile"]), (390, 520, True))
+        lb.control("agent")
+        self.assertTrue(wait_until(lambda: "Emulation.clearDeviceMetricsOverride" in self.methods(), 5))
+        lb.remove_viewer((390, 520))
+
     def test_closing_a_host_browser_lets_it_save(self):
         lb = self.open()
         lb.end(wait=True)

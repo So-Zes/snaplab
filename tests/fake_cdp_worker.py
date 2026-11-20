@@ -62,5 +62,6 @@ for line in sys.stdin:
     for ev in events:
         cdp(ev)
     if method == "Browser.close":
+        out({"kind": "host_ended", "exit_code": 0})
         break
 out({"kind": "disconnected"})

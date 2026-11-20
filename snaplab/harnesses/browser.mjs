@@ -250,8 +250,8 @@ async function host(root, opts) {
   const started = await startLive(root, { ...opts, headful: !!process.env.DISPLAY, kind: true });
   console.log(JSON.stringify({ type: "snaplab.browser_host", ...started }));
   let misses = 0;
-  while (misses < 3) {
-    await sleep(2000);
+  while (misses < 2) {
+    await sleep(1000);
     const live = liveState(root);
     try { if (!live) throw new Error("gone"); const p = await socketPipe(live.ws, 3000); await p.close(); misses = 0; }
     catch { misses++; }

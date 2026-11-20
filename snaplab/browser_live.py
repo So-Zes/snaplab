@@ -85,6 +85,10 @@ class LiveBrowser:
         self.dialog = None
         self.last_ack = 0.0
         self.ending = False
+        self.host_until = 0.0             # the workspace said no turn runs: host the browser for now
+        self.phones: list[tuple[int, int]] = []    # CSS sizes of phone viewers: pages are laid out for a phone
+        self.emulated = None
+        self.host_done = threading.Event()         # the host job ended (Chrome has written its profile)
 
     # ------------------------------------------------------------ state for the page
 
@@ -110,9 +114,11 @@ class LiveBrowser:
 
     # ------------------------------------------------------------ viewers
 
-    def add_viewer(self) -> None:
+    def add_viewer(self, phone: tuple[int, int] | None = None) -> None:
         with self.lock:
             self.viewers += 1
+            if phone:
+                self.phones.append(phone)
             first = self.viewers == 1
             if self.thread is None:
                 self.thread = threading.Thread(target=self._run, name="browser-" + self.sid, daemon=True)
@@ -120,9 +126,13 @@ class LiveBrowser:
         if first and self.status == "ready":
             threading.Thread(target=self._cast, args=(True,), daemon=True).start()
 
-    def remove_viewer(self) -> None:
+    def remove_viewer(self, phone: tuple[int, int] | None = None) -> None:
         with self.lock:
             self.viewers = max(0, self.viewers - 1)
+            if phone in self.phones:
+                self.phones.remove(phone)
+        threading.Thread(target=self._fit, daemon=True).start()
+        with self.lock:
             self.left_at = time.monotonic()
             last = self.viewers == 0
         if last and self.status == "ready":
@@ -143,7 +153,8 @@ class LiveBrowser:
     def _run(self) -> None:
         failures = 0
         try:
-            while self._wanted() and not self.m.stopping:
+            # Connect only while someone watches; a connection itself stays IDLE_CLOSE_S after they leave.
+            while self.viewers > 0 and not self.m.stopping:
                 started = time.monotonic()
                 try:
                     self._connect()
@@ -153,7 +164,7 @@ class LiveBrowser:
                         self.status, self.error = "error", "the workspace could not be reached"
                     self._changed()
                 failures = failures + 1 if time.monotonic() - started < 10 else 0
-                if not self._wanted():
+                if self.viewers == 0:
                     break
                 time.sleep(min(30, 1.5 * (failures + 1)))
         finally:
@@ -168,7 +179,7 @@ class LiveBrowser:
             self._changed()
 
     def _connect(self) -> None:
-        turn = self.m.turn_running(self.sid)
+        turn = self.m.turn_running(self.sid) and time.monotonic() > self.host_until
         with contextlib.ExitStack() as stack:
             cfg, local_port, remote_port, token = self.m.connect_config(self.sid, stack, host=not turn)
             from .harnesses import remote
@@ -185,6 +196,7 @@ class LiveBrowser:
                 self.proc, self.mode, self.status, self.error = proc, "turn" if turn else "host", "starting", None
                 self.holder = "agent" if turn else "user"
                 self.ending = False
+                self.host_done = threading.Event()
             self._changed()
             stack.callback(self._drop, proc)
             proc.stdin.write((json.dumps(req) + "\n").encode("utf-8"))
@@ -207,6 +219,17 @@ class LiveBrowser:
                     self._changed()
                 elif kind == "busy":
                     self.m.turn_started_elsewhere(self.sid)
+                elif kind == "noturn":
+                    with self.lock:
+                        self.host_until = time.monotonic() + 60
+                    self.m.busy.pop(self.sid, None)
+                elif kind == "host_ended":
+                    self.host_done.set()
+                elif kind == "disconnected":            # the browser side closed: nothing will answer any more
+                    with self.lock:
+                        for waiter in self.pending.values():
+                            waiter[2] = "the browser closed"
+                            waiter[0].set()
                 elif kind in ("nobrowser", "nojob", "host_failed"):
                     with self.lock:
                         self.error = {"nobrowser": "the browser did not start", "nojob": "this session has no workspace yet",
@@ -238,8 +261,9 @@ class LiveBrowser:
     def _watch_idle(self, proc) -> None:
         """Close the connection (and a host browser) when nobody has watched for IDLE_CLOSE_S."""
         while proc.poll() is None and not self.m.stopping:
-            time.sleep(2)
-            if not self._wanted():
+            time.sleep(1)
+            # A turn needs the job: the browser the panel runs between turns gives way (the turn waits for it).
+            if not self._wanted() or (self.mode == "host" and self.m.turn_running(self.sid) and time.monotonic() > self.host_until):
                 self.end(wait=False)
                 return
 
@@ -257,6 +281,9 @@ class LiveBrowser:
                 self.cmd("Browser.close", timeout=10)
             except Exception:  # noqa: BLE001
                 pass
+            # Chrome writes cookies and tabs as it exits, and the host job ends once it has. Closing the connection
+            # earlier would stop the job (and Chrome with it) before that.
+            self.host_done.wait(30)
         try:
             proc.stdin.close()
         except OSError:
@@ -429,6 +456,9 @@ class LiveBrowser:
             with self.lock:
                 self.active, self.session, self.casting, self.dialog = tid, session, False, None
             self.cmd("Page.enable", session=session)
+            with self.lock:
+                self.emulated = None
+            self._fit()
             self._still_frame()
             self._changed()
             if self.viewers:
@@ -452,6 +482,24 @@ class LiveBrowser:
                 self.seq += 1
                 self.frame = (self.seq, shot.get("data") or "", {"w": w, "h": h})
                 self.cond.notify_all()
+        except BrowserError:
+            pass
+
+    def _fit(self) -> None:
+        """While the user holds the browser from a phone, lay pages out for that phone (cleared on hand back, and
+        when the phone leaves). The agent always gets the window's own size back."""
+        session = self.session
+        with self.lock:
+            want = self.phones[-1] if self.phones and self.holder == "user" and self.status in ("ready", "starting") else None
+            if not session or want == self.emulated:
+                return
+            self.emulated = want
+        try:
+            if want:
+                self.cmd("Emulation.setDeviceMetricsOverride", {"width": want[0], "height": want[1], "deviceScaleFactor": 2,
+                                                                 "mobile": True}, session)
+            else:
+                self.cmd("Emulation.clearDeviceMetricsOverride", session=session)
         except BrowserError:
             pass
 
@@ -589,6 +637,7 @@ class LiveBrowser:
         self._send({"snaplab": "control", "holder": holder})
         with self.lock:
             self.holder = holder
+        self._fit()
         self._changed()
 
     def answer_dialog(self, accept: bool, text: str = "") -> None:
@@ -647,8 +696,11 @@ class LiveBrowsers:
         with self.lock:
             self.turns.add(sid)
             lb = self.items.get(sid)
-        if lb is not None and lb.mode == "host":
-            lb.end(wait=True)
+        if lb is not None:
+            with lb.lock:
+                lb.host_until = 0.0
+            if lb.mode == "host":
+                lb.end(wait=True)
 
     def after_turn(self, sid: str) -> None:
         with self.lock:
