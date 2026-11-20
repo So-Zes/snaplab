@@ -599,6 +599,8 @@ def main():
     if not re.fullmatch(r"[A-Za-z0-9_-]{1,40}", sid):
         raise ValueError("bad session id")
     home = Path.home()
+    if req.get("mode") == "live":
+        return live(req, home)
     jobs = home / "jobs"
     folder = jobs / sid
     jobs.mkdir(exist_ok=True)
@@ -610,7 +612,17 @@ def main():
     locks = home / ".local" / "state" / "snaplab-locks"
     locks.mkdir(parents=True, exist_ok=True)
     with (locks / sid).open("w") as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        # SnapLab's browser panel may still be closing its own browser in this job (remote_worker.live, host mode):
+        # wait for it a little instead of failing the turn.
+        waited = time.monotonic()
+        while True:
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if time.monotonic() - waited > 90:
+                    raise
+                time.sleep(0.5)
         global OWNER, OWNER_DATA
         OWNER = locks / (sid + '.owner.json')
         OWNER_DATA = {'pid': os.getpid(), 'start': Path('/proc/self/stat').read_text().rsplit(')', 1)[1].split()[19], 'groups': []}
@@ -722,6 +734,194 @@ def run(req, folder, home):
     watch_done.set()
     watcher.join(timeout=1)
     return 0
+
+
+# ---------------------------------------------------------------- SnapLab's browser panel
+
+LIVE_HELPERS = ("capture.py", "capture.mjs", "browser.mjs", "keep.py", "desktop.py")
+
+
+def write_helpers(folder, helpers, names):
+    meta = folder / ".snaplab"
+    if meta.is_symlink():
+        raise ValueError("linked helper folder")
+    meta.mkdir(exist_ok=True)
+    for name, raw in helpers.items():
+        if name not in names:
+            raise ValueError("invalid helper")
+        target = meta / name
+        if target.is_symlink() or (target.exists() and target.stat().st_nlink != 1):
+            raise ValueError("linked helper")
+        target.write_text(raw, encoding="utf-8")
+
+
+def host_job(req, folder, home, stop):
+    """The browser alone, between turns: the same sandbox and private desktop as a turn, running
+    `browser.mjs host` (a Chrome window with the job's profile) until SnapLab disconnects or Chrome closes."""
+    code = None
+    try:
+        write_helpers(folder, req["helpers"], LIVE_HELPERS)
+        with tempfile.TemporaryDirectory(prefix="snaplab-browser-") as codex_home:
+            for name in ("keep.py", "desktop.py"):
+                Path(codex_home, name).write_text(req["helpers"][name], encoding="utf-8")
+            env = {"HOME": str(home), "PATH": str(home / ".local/bin") + ":/usr/local/bin:/usr/bin:/bin",
+                   "LANG": "C.UTF-8", "PYTHONDONTWRITEBYTECODE": "1",
+                   "XDG_RUNTIME_DIR": f"/run/user/{os.getuid()}",
+                   "DBUS_SESSION_BUS_ADDRESS": f"unix:path=/run/user/{os.getuid()}/bus"}
+            if re.fullmatch(r"\d{3,4}x\d{3,4}", str(req.get("screen") or "")):
+                env["SNAPLAB_SCREEN"] = req["screen"]
+            if os.environ.get("SNAPLAB_WSL") == "1":
+                env["SNAPLAB_EGRESS_TOKEN"] = req["token"]
+                env["SNAPLAB_RELAY_PORT"] = str(int(req["relay_port"]))
+                env["SNAPLAB_HOST_ADDRESSES"] = json.dumps(req.get("host_addresses", []))
+            launch = ["/bin/sh", "-c", "mkdir -p /tmp/codex; cp /codex-config/* /tmp/codex/; exec python3 "
+                      "/codex-config/keep.py --supervise python3 /codex-config/desktop.py --supervise \"$@\"",
+                      "snaplab", "node", str(folder / ".snaplab" / "browser.mjs"), "host"]
+            with desktop_slot(home, stop, notify=waiting):
+                code, _ = execute(limited_command(isolated_command(launch, folder, home, codex_home)),
+                                  folder, env, "", stop, 7 * 24 * 3600, events=True, harness="browser")
+    except Exception as exc:  # noqa: BLE001 - reported as a kind, never with details
+        emit({"kind": "host_failed", "error_type": type(exc).__name__})
+    finally:
+        emit({"kind": "host_ended", "exit_code": code})
+        stop.set()                              # here: the host job's own cancel event
+
+
+def connect_live(path, stop, ask, timeout):
+    """Connect to the live browser's socket in the job folder. ask: a turn is running; if it has no browser yet,
+    ask its desktop supervisor to start one (.snaplab/browser-request)."""
+    import socket
+    started = time.monotonic()
+    asked = False
+    while not stop.is_set() and time.monotonic() - started < timeout:
+        try:
+            info = path.lstat()
+            if stat.S_ISSOCK(info.st_mode) and info.st_uid == os.getuid():
+                conn = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+                try:
+                    conn.connect(str(path))
+                    return conn
+                except OSError:
+                    conn.close()
+        except OSError:
+            pass
+        if ask and not asked and time.monotonic() - started > 2 and path.parent.is_dir() and not path.parent.is_symlink():
+            try:
+                os.close(os.open(path.parent / "browser-request", os.O_WRONLY | os.O_CREAT | os.O_EXCL |
+                                 getattr(os, "O_NOFOLLOW", 0), 0o600))
+            except OSError:
+                pass
+            asked = True
+        stop.wait(0.3)
+    return None
+
+
+def pump(conn, stop):
+    """DevTools lines both ways: SnapLab's commands from stdin to the browser, its answers and events to stdout.
+    Returns "eof" when SnapLab closed the connection, "socket" when the browser side did."""
+    closed_by = {"who": "socket"}
+
+    def from_browser():
+        try:
+            for line in conn.makefile("rb"):
+                if not line.startswith(b"{"):
+                    continue
+                with EMIT_LOCK:
+                    sys.stdout.buffer.write(b'{"kind":"cdp","m":' + line.rstrip(b"\r\n") + b"}\n")
+                    sys.stdout.buffer.flush()
+        except (OSError, ValueError):
+            pass
+        finally:
+            emit({"kind": "disconnected"})
+            stop.set()
+    reader = threading.Thread(target=from_browser, daemon=True)
+    reader.start()
+    pending = b""
+    try:
+        while not stop.is_set():
+            readable, _, _ = select.select([sys.stdin.fileno()], [], [], 0.2)
+            if not readable:
+                continue
+            chunk = os.read(sys.stdin.fileno(), 1 << 16)
+            if not chunk:
+                closed_by["who"] = "eof"                # SnapLab closed the panel's connection
+                break
+            pending += chunk
+            if len(pending) > 16 * 1024 * 1024:
+                raise ValueError("oversized message")
+            *lines, pending = pending.split(b"\n")
+            for line in lines:
+                if line.strip():
+                    conn.sendall(line + b"\n")
+    finally:
+        stop.set()
+        try:
+            conn.close()
+        except OSError:
+            pass
+        reader.join(timeout=2)
+    return closed_by["who"]
+
+
+def live(req, home):
+    """SnapLab's browser panel. attach: the running turn's live browser (started on request when it has none).
+    host: no turn runs, so run the browser alone in the job's sandbox (the job lock keeps a turn out meanwhile)."""
+    import fcntl
+    sid = req["sid"]
+    jobs = home / "jobs"
+    folder = jobs / sid
+    stop = threading.Event()                    # the panel's connection
+    cancel = threading.Event()                  # the host job (kept separate: Chrome must finish writing first)
+    job = lock = None
+    try:
+        if req.get("host"):
+            jobs.mkdir(exist_ok=True)
+            if jobs.is_symlink() or jobs.resolve() != jobs or folder.is_symlink():
+                raise ValueError("invalid jobs directory")
+            folder.mkdir(exist_ok=True)
+            locks = home / ".local" / "state" / "snaplab-locks"
+            locks.mkdir(parents=True, exist_ok=True)
+            lock = (locks / sid).open("w")
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                emit({"kind": "busy"})                  # a turn holds the job: attach to it instead
+                return 0
+            job = threading.Thread(target=host_job, args=(req, folder, home, cancel), daemon=True)
+            job.start()
+        elif folder.is_symlink() or not folder.is_dir():
+            emit({"kind": "nojob"})
+            return 0
+        else:
+            # No turn holds the job (it ended, or has not started): SnapLab runs the browser itself instead.
+            locks = home / ".local" / "state" / "snaplab-locks"
+            if not (locks / sid).exists():
+                emit({"kind": "noturn"})
+                return 0
+            with (locks / sid).open("a") as probe:
+                try:
+                    fcntl.flock(probe, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    fcntl.flock(probe, fcntl.LOCK_UN)
+                    emit({"kind": "noturn"})
+                    return 0
+                except BlockingIOError:
+                    pass
+        conn = connect_live(folder / ".snaplab" / "live.sock", cancel if job else stop, ask=not req.get("host"),
+                            timeout=float(req.get("wait_s") or 120))
+        if conn is None:
+            emit({"kind": "nobrowser"})
+            return 0
+        emit({"kind": "connected", "host": bool(req.get("host"))})
+        if pump(conn, stop) == "socket" and job is not None:
+            job.join(timeout=40)                # the browser closed (Browser.close): its job ends by itself
+        return 0
+    finally:
+        stop.set()
+        cancel.set()
+        if job is not None:
+            job.join(timeout=30)
+        if lock is not None:
+            lock.close()
 
 
 if __name__ == "__main__":

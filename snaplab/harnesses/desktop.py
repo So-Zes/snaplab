@@ -81,7 +81,26 @@ def digest(im):
     return hashlib.sha1(im.tobytes()).hexdigest()
 
 
+def user_has_browser():
+    try:
+        return json.loads((Path.cwd() / '.snaplab' / 'browser-control.json').read_text(encoding='utf-8')).get('holder') == 'user'
+    except (OSError, ValueError, AttributeError):
+        return False
+
+
+def wait_for_user():
+    """While the user has taken over the browser in SnapLab, input waits (up to 15 minutes) until they hand it back."""
+    started = time.monotonic()
+    while user_has_browser():
+        if time.monotonic() - started > 900:
+            raise ValueError('The user still has control of the browser after 15 minutes; do other work or ask them.')
+        time.sleep(1)
+    waited = time.monotonic() - started
+    return f'The user used the browser for {round(waited)} s while you waited; look at the screen again.' if waited > 1 else None
+
+
 def guard_input():
+    wait_for_user()
     if (STATE / 'blocked').exists():
         raise ValueError('Input stopped: card details, identity verification or a human check (CAPTCHA) needs the user. '
                          'Report it; do not bypass.')
@@ -996,6 +1015,16 @@ def supervise(cmd):
 
         def launch_requests():
             while not ended.is_set():
+                # SnapLab's browser panel asks for the live browser when the agent has not opened one yet.
+                asked = Path.cwd() / '.snaplab' / 'browser-request'
+                if asked.exists() and not asked.is_symlink():
+                    try:
+                        asked.unlink()
+                        children.append(subprocess.Popen(['node', str(Path.cwd() / '.snaplab' / 'browser.mjs'), 'start'],
+                                                         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                                                         stderr=subprocess.DEVNULL, start_new_session=True))
+                    except OSError:
+                        pass
                 for request in STATE.glob('launch-*.json'):
                     try:
                         data = json.loads(request.read_text(encoding='utf-8'))

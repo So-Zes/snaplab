@@ -16,6 +16,7 @@ class Element {
   }
   setAttribute(key, value) { this.attrs[key] = String(value); if (key === "value") this.value = value; if (key.startsWith("data-")) this.dataset[key.slice(5)] = value; }
   focus() { this.ownerDocument.activeElement = this; }
+  blur() { if (this.ownerDocument && this.ownerDocument.activeElement === this) this.ownerDocument.activeElement = null; }
   getClientRects() { return [{}]; }
   removeEventListener(type, fn) { this.events[type] = (this.events[type] || []).filter(x => x !== fn); }
   getAttribute(key) { return this.attrs[key]; }
@@ -52,6 +53,7 @@ document.createElement = (tag) => { const node = new Element(tag); node.ownerDoc
 document.createTextNode = (value) => { const node = new Element("text"); node.textContent = value; return node; };
 const requests = [];
 const timers = [];
+const sources = [];
 const uploaded = "upload-" + "a".repeat(64) + ".png";
 const context = vm.createContext({
   document, Node: Element, navigator: {}, location: { hash: "#/chats" },
@@ -59,6 +61,7 @@ const context = vm.createContext({
   requestAnimationFrame: (fn) => fn(), setTimeout: (fn) => { timers.push(fn); return fn; }, setInterval() {},
   clearTimeout: (fn) => { const i = timers.indexOf(fn); if (i >= 0) timers.splice(i, 1); },
   Image: class { naturalWidth = 1024; naturalHeight = 512; set src(value) { this.onload(); } },
+  EventSource: class { constructor(url) { this.url = url; this.handlers = {}; sources.push(this); } addEventListener(type, fn) { this.handlers[type] = fn; } close() { this.closed = true; } },
   FileReader: class { readAsDataURL() { this.result = "data:image/jpeg;base64,SOURCE_WITH_EXIF"; this.onload(); } },
   fetch: async (path, options = {}) => { requests.push({ path, options }); return { ok: true, json: async () => (context.reply ? context.reply(path, options) : { avatar: uploaded, usage: {}, activity: [] }) }; },
 });
@@ -72,9 +75,10 @@ source = source.replace("  start();\n})();", `
     buildComposer, drafts, keepDraft, sendDraft, columnChart, usageBuckets, U,
     chats: () => { let body; screen = (_, b) => { body = b; }; renderChats(); return body; },
     home: () => { let body; screen = (_, b) => { body = b; }; renderHomeUsage = () => {}; renderHome(); return body; },
-    dashboard: () => { let body; screen = (_, b) => { body = b; }; renderUsageCard = () => {}; renderDashboard(); return body; }
+    dashboard: () => { let body; screen = (_, b) => { body = b; }; renderUsageCard = () => {}; renderDashboard(); return body; },
+    browser: (sid) => { let body; screen = (_, b) => { body = b; }; renderBrowser(sid); return body; }, closeBrowserStream
   };
 })();`);
 vm.runInContext(source, context);
-return { context, ui: context.ui, document, requests, timers };
+return { context, ui: context.ui, document, requests, timers, sources };
 }

@@ -753,6 +753,7 @@
     if (!S.settings.onboarded) return renderOnboarding();
     if (!S.settings.tour_done && !viaPhone()) setTimeout(showTour, 600);
     const r = S.route;
+    if (r.name !== "browser") closeBrowserStream();
     document.body.classList.toggle("in-room", r.name === "room");
     switch (r.name) {
       case "room": return renderRoom(r.id);
@@ -766,8 +767,188 @@
       case "bot": return renderBot(r.id);
       case "settings": return renderSettings();
       case "phone": return renderPhone();
+      case "browser": return renderBrowser(r.id);
       default: return renderChats();
     }
+  }
+
+
+  // ------------------------------------------------------------------ browser panel (the session's live browser)
+
+  let browserLive = null;
+  function closeBrowserStream() { if (browserLive) { browserLive.close(); browserLive = null; } }
+
+  // Special keys go to the page as key presses; text (and finished IME text) goes as inserted text.
+  const BP_KEYS = { Enter: 13, Backspace: 8, Tab: 9, Escape: 27, Delete: 46, ArrowLeft: 37, ArrowUp: 38, ArrowRight: 39,
+    ArrowDown: 40, Home: 36, End: 35, PageUp: 33, PageDown: 34 };
+  const bpMods = (e) => (e.altKey ? 1 : 0) | (e.ctrlKey ? 2 : 0) | (e.metaKey ? 4 : 0) | (e.shiftKey ? 8 : 0);
+
+  function renderBrowser(sid) {
+    closeBrowserStream();
+    const sess = S.sessions.find((x) => x.id === sid) || S.sessionDetail[sid] || {};
+    let state = { status: "starting", tabs: [], holder: "agent", mode: null }, size = { w: 1024, h: 768 }, dialogSheet = null;
+    const canvas = h("canvas", { class: "bp-canvas", width: 1024, height: 640, "aria-label": t("browser.page") });
+    const ctx = canvas.getContext("2d");
+    const veil = h("div", { class: "bp-veil" }, h("span", { class: "spinner" }), h("span", { class: "bp-veil-text" }, t("browser.starting")));
+    const chip = h("span", { class: "chip bp-chip" });
+    const url = h("input", { class: "input bp-url", type: "text", inputmode: "url", autocomplete: "off", autocapitalize: "off",
+      spellcheck: "false", placeholder: t("browser.url.ph"), enterkeyhint: "go" });
+    const typing = h("textarea", { class: "input bp-type", rows: "1", autocomplete: "off", autocapitalize: "off", spellcheck: "false",
+      placeholder: t("browser.type.ph"), "aria-label": t("browser.keyboard") });
+    const post = (body) => api("/api/browser/" + sid, body);
+    let queue = [], sending = false;
+    const flush = async () => {
+      if (sending || !queue.length) return;
+      sending = true;
+      const events = queue.splice(0, 100);
+      try { await post({ action: "input", events }); } catch (e) { if (!/take over/.test(e.message || "")) fail(e); }
+      sending = false;
+      if (queue.length) flush();
+    };
+    const send = (ev) => { if (!state.can_input) return; queue.push(ev); flush(); };
+    const point = (e) => {
+      const r = canvas.getBoundingClientRect(), fit = (v) => (v >= 0 && v <= 1 ? v : v > 1 ? 1 : 0);
+      return { x: fit((e.clientX - (r.left || 0)) / (r.width || 1)), y: fit((e.clientY - (r.top || 0)) / (r.height || 1)) };
+    };
+    const btn = (ic, label, fn) => h("button", { class: "icon-btn", type: "button", "aria-label": label, title: label, onclick: fn }, icon(ic));
+    const nav = (to, extra) => post({ action: "nav", to, ...(extra || {}) }).catch(fail);
+    const tabsBtn = h("button", { class: "btn ghost small bp-tabs", type: "button", onclick: () => tabsSheet() }, icon("layers"), h("span", { class: "bp-tab-n" }, "0"));
+    const navButtons = [btn("back", t("browser.back"), () => nav("back")), btn("right", t("browser.forward"), () => nav("forward")),
+      btn("refresh", t("browser.reload"), () => nav("reload"))];
+    const control = h("button", { class: "btn primary", type: "button", onclick: async () => {
+      try { await post({ action: "control", holder: state.holder === "user" ? "agent" : "user" }); } catch (e) { fail(e); }
+    } });
+    const tabsSheet = () => {
+      let sh = null;
+      const list = h("div", { class: "bp-tablist" }, state.tabs.map((tb) => h("div", { class: "bp-tabrow" + (tb.active ? " on" : "") },
+        h("button", { class: "bp-tabmain", type: "button", onclick: async () => { sh.close(); try { await post({ action: "tab", to: "show", tab: tb.id }); } catch (e) { fail(e); } } },
+          h("b", {}, tb.title || tb.url || "about:blank"), h("span", { class: "muted" }, tb.url)),
+        h("button", { class: "icon-btn", type: "button", "aria-label": t("browser.closetab"), onclick: async () => { sh.close(); try { await post({ action: "tab", to: "close", tab: tb.id }); } catch (e) { fail(e); } } }, icon("x")))));
+      sh = sheet(t("browser.tabs"), [list, h("button", { class: "btn ghost", type: "button", onclick: async () => { sh.close(); try { await post({ action: "tab", to: "new" }); } catch (e) { fail(e); } } }, icon("plus"), t("browser.newtab"))]);
+    };
+    const showDialog = () => {
+      if (dialogSheet) { dialogSheet.close(); dialogSheet = null; }
+      const d = state.dialog;
+      if (!d || !state.can_input) return;
+      const answer = d.type === "prompt" ? h("input", { class: "input", value: d.default || "" }) : null;
+      const reply = async (accept) => { const sh = dialogSheet; dialogSheet = null; if (sh) sh.close(); try { await post({ action: "dialog", accept, text: answer ? answer.value : "" }); } catch (e) { fail(e); } };
+      dialogSheet = sheet(t("browser.dialog"), [h("p", { class: "bp-dialog-text" }, d.message || ""), answer,
+        h("div", { class: "qcard-actions" }, d.type !== "alert" ? h("button", { class: "btn ghost", type: "button", onclick: () => reply(false) }, t("common.cancel")) : null,
+          h("button", { class: "btn primary", type: "button", onclick: () => reply(true) }, t("common.ok")))]);
+    };
+    const paintState = () => {
+      const active = state.tabs.find((x) => x.active) || {};
+      if (document.activeElement !== url) url.value = active.url && active.url !== "about:blank" ? active.url : "";
+      $(".bp-tab-n", tabsBtn).textContent = String(state.tabs.length);
+      const ready = state.status === "ready";
+      veil.classList.toggle("hide", ready);
+      $(".bp-veil-text", veil).textContent = state.error ? state.error : t(state.status === "waiting" ? "browser.waiting" : "browser.starting");
+      chip.className = "chip bp-chip " + (state.holder === "user" ? "good" : "");
+      chip.textContent = !ready ? t("browser.connecting") : state.mode === "host" ? t("browser.host") : state.holder === "user" ? t("browser.you") : t("browser.agent");
+      control.textContent = state.holder === "user" ? t("browser.handback") : t("browser.takeover");
+      control.className = "btn " + (state.holder === "user" ? "ghost" : "primary");
+      control.classList.toggle("hide", state.mode !== "turn" || !ready);     // no agent between turns
+      canvas.classList.toggle("can-input", !!state.can_input);
+      [...navButtons, url, tabsBtn, typing].forEach((el) => (el.disabled = !state.can_input));
+      showDialog();
+    };
+    // Only the newest frame is drawn; a frame that arrives while one is decoding replaces the waiting one.
+    let decoding = false, waiting = null;
+    const draw = (f) => {
+      if (decoding) { waiting = f; return; }
+      decoding = true;
+      const img = new Image();
+      img.onload = () => {
+        if (canvas.width !== img.naturalWidth || canvas.height !== img.naturalHeight) { canvas.width = img.naturalWidth; canvas.height = img.naturalHeight; }
+        ctx.drawImage(img, 0, 0);
+        decoding = false;
+        if (waiting) { const n = waiting; waiting = null; draw(n); }
+      };
+      img.onerror = () => { decoding = false; };
+      img.src = "data:image/jpeg;base64," + f.jpeg;
+      if (f.w && f.h) size = { w: f.w, h: f.h };
+    };
+    // Mouse: presses, releases and moves (moves at most every 50 ms); touch: a tap clicks, a drag scrolls.
+    let lastMove = 0, touch = null;
+    canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+    canvas.addEventListener("pointerdown", (e) => {
+      if (!state.can_input) return;
+      e.preventDefault();
+      if (e.pointerType === "mouse") {
+        typing.focus({ preventScroll: true });
+        send({ t: "down", ...point(e), button: ["left", "middle", "right"][e.button] || "left", buttons: e.buttons, count: e.detail || 1, mods: bpMods(e) });
+      } else touch = { x: e.clientX, y: e.clientY, t: Date.now(), moved: false, last: point(e), lastY: e.clientY, lastX: e.clientX };
+    });
+    canvas.addEventListener("pointermove", (e) => {
+      if (!state.can_input) return;
+      if (e.pointerType === "mouse") {
+        if (Date.now() - lastMove < 50) return;
+        lastMove = Date.now();
+        send({ t: "move", ...point(e), buttons: e.buttons, mods: bpMods(e) });
+      } else if (touch) {
+        if (Math.hypot(e.clientX - touch.x, e.clientY - touch.y) > 8) touch.moved = true;
+        if (touch.moved && Date.now() - lastMove > 60) {
+          const r = canvas.getBoundingClientRect(), k = size.w / r.width;
+          send({ t: "wheel", ...point(e), dx: (touch.lastX - e.clientX) * k, dy: (touch.lastY - e.clientY) * k });
+          touch.lastX = e.clientX; touch.lastY = e.clientY; lastMove = Date.now();
+        }
+      }
+    });
+    canvas.addEventListener("pointerup", (e) => {
+      if (!state.can_input) return;
+      if (e.pointerType === "mouse") send({ t: "up", ...point(e), button: ["left", "middle", "right"][e.button] || "left", buttons: e.buttons, count: e.detail || 1, mods: bpMods(e) });
+      else if (touch && !touch.moved) { send({ t: "tap", ...point(e) }); typing.focus({ preventScroll: true }); }
+      touch = null;
+    });
+    canvas.addEventListener("wheel", (e) => {
+      if (!state.can_input) return;
+      e.preventDefault();
+      const k = e.deltaMode === 1 ? 40 : e.deltaMode === 2 ? 800 : 1;
+      send({ t: "wheel", ...point(e), dx: e.deltaX * k, dy: e.deltaY * k, mods: bpMods(e) });
+    }, { passive: false });
+    // Typing: the bar at the bottom holds what is being composed (IME); finished text goes to the page at once.
+    let composing = false, committed = null;
+    typing.addEventListener("compositionstart", () => { composing = true; });
+    typing.addEventListener("compositionend", (e) => {
+      composing = false;
+      if (e.data) { send({ t: "text", text: e.data }); committed = e.data; }
+      typing.value = "";
+    });
+    typing.addEventListener("input", (e) => {
+      if (composing || e.isComposing) return;
+      if (e.inputType === "insertCompositionText" || (committed !== null && e.data === committed)) { committed = null; typing.value = ""; return; }
+      committed = null;
+      if (e.inputType === "deleteContentBackward") { send({ t: "key", type: "down", key: "Backspace", code: "Backspace", vk: 8 }); send({ t: "key", type: "up", key: "Backspace", code: "Backspace", vk: 8 }); }
+      else if (e.inputType === "insertLineBreak") { send({ t: "key", type: "down", key: "Enter", code: "Enter", vk: 13, text: "\r" }); send({ t: "key", type: "up", key: "Enter", code: "Enter", vk: 13 }); }
+      else if (typing.value) send({ t: "text", text: typing.value });
+      typing.value = "";
+    });
+    typing.addEventListener("keydown", (e) => {
+      if (e.isComposing || e.keyCode === 229 || composing) return;
+      const vk = BP_KEYS[e.key];
+      const combo = (e.ctrlKey || e.metaKey) && e.key.length === 1;
+      if (!vk && !combo) return;                 // ordinary characters arrive as input
+      e.preventDefault();
+      const key = { key: e.key, code: e.code, vk: vk || e.key.toUpperCase().charCodeAt(0), mods: bpMods(e) };
+      send({ t: "key", type: "down", ...key, ...(e.key === "Enter" ? { text: "\r" } : {}) });
+      send({ t: "key", type: "up", ...key });
+    });
+    const form = h("form", { class: "bp-bar", onsubmit: (e) => { e.preventDefault(); if (url.value.trim()) nav("go", { url: url.value.trim() }); url.blur(); } },
+      ...navButtons, url, tabsBtn);
+    const body = h("div", { class: "bp" },
+      form,
+      h("div", { class: "bp-row" }, chip, control),
+      h("div", { class: "bp-stage" }, canvas, veil),
+      typing,
+      h("p", { class: "hint bp-note" }, t("browser.note")));
+    screen({ back: "#/session/" + sid, title: t("browser.title") + (sess.title ? " · " + sess.title : ""), cls: "browser", noTabs: true }, body);
+    paintState();
+    // A phone gets pages laid out for its screen while it holds the browser.
+    const narrow = (window.innerWidth || 1024) < 700;
+    const es = new EventSource("/api/browser/" + sid + "/live" + (narrow ? "?phone=1&vw=" + Math.round(window.innerWidth) + "&vh=" + Math.round((window.innerHeight || 800) * 0.62) : ""));
+    es.addEventListener("frame", (e) => { try { draw(JSON.parse(e.data)); } catch (err) { /* a broken frame is skipped */ } });
+    es.addEventListener("state", (e) => { try { state = JSON.parse(e.data); paintState(); } catch (err) { /* ignored */ } });
+    browserLive = es;
   }
 
   // ------------------------------------------------------------------ first-run tour and phone access
@@ -1985,6 +2166,7 @@
       s.doing ? h("div", { class: "hero-now doing" }, h("span", { class: "spinner sm" }), h("span", { class: "now-kind" }, t("work.now")), h("span", { class: "now-step" }, s.doing))
         : nowEv ? h("div", { class: "hero-now" }, h("span", { class: "spinner sm" }), h("span", { class: "now-kind" }, t("ev." + nowEv.kind)), h("span", { class: "now-text" }, (nowEv.text || "").split("\n")[0].slice(0, 160))) : null,
       running ? h("button", { class: "btn danger small", type: "button", onclick: stopSession }, icon("stop"), t("session.stop")) : null,
+      ["codex", "pi"].includes(s.harness) ? h("a", { class: "btn small", href: "#/browser/" + s.id }, icon("globe"), t(running ? "browser.watch" : "browser.open")) : null,
       s.branch ? h("div", { class: "hero-branch" }, icon("branch"), h("code", {}, s.branch), s.merged ? h("span", { class: "chip tiny good" }, t("session.merged")) : null) : null,
       st === "review" ? h("button", { class: "btn good", type: "button", onclick: markReviewed }, icon("review"), t("session.reviewed")) : null,
       s.branch && !s.merged && !running && (s.diff || {}).files ? h("button", { class: "btn", type: "button", onclick: mergeSession }, icon("branch"), t("session.merge")) : null);

@@ -16,6 +16,22 @@ Newest first. Each entry: the date, what changed, and why.
 - Room summaries show next_actions and open_items first and leave out empty fields; identifiers are capped at 40
   (new ones first, earlier ones only while the summary still mentions them) and only open approvals are listed.
   Why: both lists only grew, and the 1,000-token clip removed next_actions, the last field.
+## 2026-11-21 Browser panel
+
+- A SnapCode session's browser can be opened inside SnapLab, on the PC or the phone ("Open browser" on the session,
+  `#/browser/<id>`). The user sees the page live, types an address, clicks, scrolls and types (Japanese IME
+  included), switches tabs and answers page dialogs. During a turn it is the agent's own Chrome: the user watches
+  and can take over and hand back; between turns SnapLab runs the same Chrome alone in the workspace, so a site
+  the user signs in to there is signed in for the agent's next turn (`browser_live.py`, `remote_worker.live`,
+  `browser.mjs --live` and `host`). Why: the user can watch the agent and step in for sign-ins and checks that
+  need a person, without the browser leaving the sandbox.
+- The agent's live browser is now a Chrome window on the job's screen by default; `open` and `do` start it when
+  needed. Why: the default was a browser without a window, so the session's screen view stayed black.
+- The browser profile restores its tabs, and kept processes get five seconds to exit after SIGTERM, so cookies and
+  tabs are written. While the user holds control, `browser.mjs open/do` and `desktop.py` input wait (up to 15
+  minutes) and then tell the agent to look again.
+- On a phone, pages are laid out for the phone's screen while the user holds the browser. A turn's worker waits up to
+  90 s for its job instead of failing when the panel's browser is still closing.
 
 ## 2026-11-20 Claude and ChatGPT apps, Google Gemini
 

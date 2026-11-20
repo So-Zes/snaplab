@@ -108,6 +108,8 @@ class App:
         self.web_mcp = WebMCP(self)
         from .phone import Phone
         self.phone = Phone(self)
+        from .browser_live import LiveBrowsers
+        self.browsers = LiveBrowsers(self)
         self.translator = None
         self.health: dict = {"model_ok": None, "model_error": None}
         self._status_stop = threading.Event()

@@ -1,9 +1,15 @@
 // Browser for SnapCode: open pages in Chromium, act on them like a user, see the result, read what DevTools reads.
 //
 // Live browser (stays open for the whole turn, so page and game state carry over between commands):
-//   node .snaplab/browser.mjs start [--width 1280 --height 800 --mobile]   headless (no window)
-//   node .snaplab/browser.mjs start --headful [--devtools]                 a real Chrome window on the job's desktop
+//   node .snaplab/browser.mjs start [--devtools]        a real Chrome window on the job's desktop (the default when the
+//                                                       job has one); the user can watch it and take over in SnapLab
+//   node .snaplab/browser.mjs start --headless [--width 1280 --height 800 --mobile]   no window (also --mobile or a size)
 //   (start keeps a running browser; --headful or --headless replaces it with the other kind)
+//   open/do without start also start the live browser when the job has a desktop.
+// While the user has taken over the browser in SnapLab (.snaplab/browser-control.json), open and do wait until they
+// hand it back, then report it: look at the page again before acting.
+// SnapLab's live view: `--live` (kept by start) relays the DevTools protocol on .snaplab/live.sock; `host` runs the
+// browser alone, between turns, for the user.
 //   node .snaplab/browser.mjs open URL_OR_FILE [STEP ...]   go to a page, then run steps
 //   node .snaplab/browser.mjs do STEP [STEP ...]            run steps on the page that is open now
 //   node .snaplab/browser.mjs status | stop
@@ -108,25 +114,28 @@ function screenSize() {
 
 function parseArgs(argv) {
   const opts = { width: 1280, height: 800, timeout: 120, mobile: false, fresh: false, shot: true, headful: false,
-    devtools: false, sized: false };
+    devtools: false, sized: false, kind: false };
   const steps = [];
   let target = null, command = "open";
-  if (["start", "stop", "status", "open", "do"].includes(argv[0])) command = argv.shift();
+  if (["start", "stop", "status", "open", "do", "host"].includes(argv[0])) command = argv.shift();
   if (command === "do") target = "";
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--mobile") opts.mobile = true;
     else if (a === "--fresh") opts.fresh = true;
     else if (a === "--no-shot") opts.shot = false;
-    else if (a === "--headful" || a === "--window") opts.headful = true;
-    else if (a === "--headless") opts.headless = true;
-    else if (a === "--devtools") opts.devtools = opts.headful = true;
+    else if (a === "--headful" || a === "--window") opts.headful = opts.kind = true;
+    else if (a === "--headless") opts.headless = opts.kind = true;
+    else if (a === "--devtools") opts.devtools = opts.headful = opts.kind = true;
     else if (["--width", "--height", "--timeout"].includes(a)) { opts[a.slice(2)] = Number(argv[++i]); if (a !== "--timeout") opts.sized = true; }
     else if (target === null) target = a;
     else steps.push(a);
   }
   if (target === null && command === "open") throw new Error("usage: node .snaplab/browser.mjs [start|open|do|stop] ...  (see the top of this file)");
   if (opts.mobile && opts.width === 1280) { opts.width = 390; opts.height = 844; }
+  // A window on the job's screen unless asked otherwise: the user can watch it (the screen stayed black before,
+  // because the default was a browser without a window). --mobile or a size still means page emulation, headless.
+  if (!opts.headful && !opts.headless && process.env.DISPLAY && !opts.mobile && !opts.sized) opts.headful = true;
   if (opts.headful && !opts.sized) Object.assign(opts, screenSize());
   if (!(opts.width >= 200 && opts.width <= 3840 && opts.height >= 200 && opts.height <= 3000)) throw new Error("--width/--height out of range");
   if (!(opts.timeout >= 5 && opts.timeout <= 1800)) throw new Error("--timeout must be 5-1800 seconds");
@@ -157,6 +166,98 @@ async function socketPipe(url, commandMs) {
 }
 
 const LIVE = (root) => path.join(root, ".snaplab", "browser-live.json");
+const CONTROL = (root) => path.join(root, ".snaplab", "browser-control.json");
+const SOCKET = (root) => path.join(root, ".snaplab", "live.sock");
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Who uses the browser now: "user" after Take over in SnapLab, otherwise the agent.
+function controlHolder(root) {
+  try { return JSON.parse(fs.readFileSync(CONTROL(root), "utf-8")).holder === "user" ? "user" : "agent"; } catch { return "agent"; }
+}
+
+// Actions wait while the user has the browser (up to 15 minutes), then say so.
+async function waitForUser(root) {
+  if (controlHolder(root) !== "user") return null;
+  const t0 = Date.now();
+  while (controlHolder(root) === "user") {
+    if (Date.now() - t0 > 15 * 60000) throw new Error("the user still has control of the browser after 15 minutes; do other work or ask them");
+    await sleep(1000);
+  }
+  return "the user used the browser for " + Math.round((Date.now() - t0) / 1000) + " s while you waited; look at the page again before acting";
+}
+
+// SnapLab's live view: each connection on .snaplab/live.sock gets its own DevTools connection to the live browser.
+// Lines are JSON: DevTools messages both ways, plus {"snaplab":"control","holder":"user"|"agent"} from SnapLab.
+// Taking over is given back when SnapLab's connection ends.
+async function relay(root) {
+  const sock = SOCKET(root);
+  fs.rmSync(sock, { force: true });
+  const setHolder = (holder) => {
+    try {
+      if (holder === "user") fs.writeFileSync(CONTROL(root), JSON.stringify({ holder, since: new Date().toISOString() }));
+      else fs.rmSync(CONTROL(root), { force: true });
+    } catch {}
+  };
+  setHolder("agent");
+  const server = net.createServer((conn) => {
+    conn.setEncoding("utf8");
+    let ws = null, buf = "", closed = false, holding = false;
+    const queue = [];
+    const done = () => {
+      if (closed) return;
+      closed = true;
+      if (holding) setHolder("agent");
+      try { if (ws) ws.close(); } catch {}
+      conn.destroy();
+    };
+    const live = liveState(root);
+    if (!live) { conn.end(JSON.stringify({ snaplab: "nobrowser" }) + "\n"); return; }
+    ws = new WebSocket(live.ws);
+    ws.onopen = () => {
+      conn.write(JSON.stringify({ snaplab: "hello", headful: !!live.headful, width: live.width, height: live.height }) + "\n");
+      for (const q of queue.splice(0)) ws.send(q);
+    };
+    ws.onmessage = (e) => { if (!closed) conn.write(String(e.data) + "\n"); };
+    ws.onclose = done;
+    ws.onerror = done;
+    conn.on("data", (chunk) => {
+      buf += chunk;
+      if (buf.length > 16 * 1024 * 1024) return done();
+      let i;
+      while ((i = buf.indexOf("\n")) >= 0) {
+        const line = buf.slice(0, i); buf = buf.slice(i + 1);
+        if (!line.trim()) continue;
+        let msg;
+        try { msg = JSON.parse(line); } catch { continue; }
+        if (msg && msg.snaplab === "control") { holding = msg.holder === "user"; setHolder(holding ? "user" : "agent"); continue; }
+        const text = JSON.stringify(msg);
+        if (ws.readyState === 1) ws.send(text); else queue.push(text);
+      }
+    });
+    conn.on("close", done);
+    conn.on("error", done);
+  });
+  await new Promise((ok, fail) => { server.once("error", fail); server.listen(sock, ok); });
+  fs.chmodSync(sock, 0o600);
+  const stop = () => { try { server.close(); fs.rmSync(sock, { force: true }); setHolder("agent"); } catch {} process.exit(0); };
+  process.on("SIGTERM", stop);
+  process.on("SIGINT", stop);
+}
+
+// Between turns: the browser alone, a window on the host job's desktop, until it closes (SnapLab sends
+// Browser.close, so cookies are written) or the job ends.
+async function host(root, opts) {
+  const started = await startLive(root, { ...opts, headful: !!process.env.DISPLAY, kind: true });
+  console.log(JSON.stringify({ type: "snaplab.browser_host", ...started }));
+  let misses = 0;
+  while (misses < 2) {
+    await sleep(1000);
+    const live = liveState(root);
+    try { if (!live) throw new Error("gone"); const p = await socketPipe(live.ws, 3000); await p.close(); misses = 0; }
+    catch { misses++; }
+  }
+  stopLive(root);
+}
 const KEEP = (root, args) => spawnSync(process.env.SNAPLAB_PYTHON || (process.platform === "win32" ? "python" : "python3"),
   [path.join(root, ".snaplab", "keep.py"), ...args], { cwd: root, encoding: "utf-8" });
 
@@ -176,13 +277,19 @@ function freePort() {
   return new Promise((ok) => { const s = net.createServer(); s.listen(0, "127.0.0.1", () => { const p = s.address().port; s.close(() => ok(p)); }); });
 }
 
+function ensureRelay(root) {
+  try { if (fs.statSync(SOCKET(root)).isSocket() && KEEP(root, ["list"]).stdout.includes("browser-live")) return; } catch {}
+  KEEP(root, ["stop", "browser-live"]);
+  KEEP(root, ["start", "browser-live", "--", process.execPath, path.join(root, ".snaplab", "browser.mjs"), "--live"]);
+}
+
 async function startLive(root, opts) {
   const old = liveState(root);
   if (old) {
     try {
       const pipe = await socketPipe(old.ws, 3000); await pipe.close();
       // Keep the running browser unless the other kind was asked for explicitly.
-      if (!!old.headful === opts.headful || (!opts.headful && !opts.headless)) return { ok: true, already_running: true, ...publicLive(old) };
+      if (!!old.headful === opts.headful || !opts.kind) { ensureRelay(root); return { ok: true, already_running: true, ...publicLive(old) }; }
     } catch {}
   }
   if (opts.headful && !process.env.DISPLAY)
@@ -195,12 +302,16 @@ async function startLive(root, opts) {
   fs.mkdirSync(profile, { recursive: true });
   fs.rmSync(path.join(profile, "DevToolsActivePort"), { force: true });
   // A new profile does not offer to save passwords or translate pages; those bubbles would cover the page.
+  // Tabs and sign-ins come back after a restart ("continue where you left off"): the user signs in between turns
+  // and the agent's next turn finds the same pages.
   const prefs = path.join(profile, "Default", "Preferences");
-  if (!fs.existsSync(prefs)) {
-    fs.mkdirSync(path.dirname(prefs), { recursive: true });
-    fs.writeFileSync(prefs, JSON.stringify({ credentials_enable_service: false, profile: { password_manager_enabled: false },
-      translate: { enabled: false }, browser: { check_default_browser: false } }));
-  }
+  let saved = {};
+  try { saved = JSON.parse(fs.readFileSync(prefs, "utf-8")); } catch {}
+  if (!fs.existsSync(prefs)) Object.assign(saved, { credentials_enable_service: false, profile: { password_manager_enabled: false },
+    translate: { enabled: false }, browser: { check_default_browser: false } });
+  saved.session = { ...(saved.session || {}), restore_on_startup: 1 };
+  fs.mkdirSync(path.dirname(prefs), { recursive: true });
+  fs.writeFileSync(prefs, JSON.stringify(saved));
   const filesPort = await freePort();
   const files = KEEP(root, ["start", "browser-files", "--", process.execPath, path.join(root, ".snaplab", "browser.mjs"), "--serve", String(filesPort)]);
   if (files.status !== 0) throw new Error("could not start the file server: " + (files.stdout || files.stderr).trim());
@@ -214,7 +325,7 @@ async function startLive(root, opts) {
     : [...common, "--headless=new", "--disable-extensions", "--disable-background-networking", "--hide-scrollbars",
        "--window-size=" + opts.width + "," + opts.height];
   if (process.env.HTTP_PROXY) flags.push("--proxy-server=" + process.env.HTTP_PROXY);
-  flags.push("about:blank");
+  if (!opts.headful) flags.push("about:blank");        // a window restores the last pages instead
   const started = KEEP(root, ["start", "browser", "--", browser, ...flags]);
   if (started.status !== 0) throw new Error("could not start the browser: " + (started.stdout || started.stderr).trim());
   fs.writeFileSync(LIVE(root), JSON.stringify({ base: "http://127.0.0.1:" + filesPort + "/", width: opts.width, height: opts.height,
@@ -224,12 +335,13 @@ async function startLive(root, opts) {
     if (Date.now() - t0 > 30000) throw new Error("the browser did not open within 30 s; see: python3 .snaplab/keep.py log browser");
     await new Promise((r) => setTimeout(r, 200));
   }
+  ensureRelay(root);
   return { ok: true, started: true, ...publicLive(liveState(root)), kept: JSON.parse(started.stdout || "{}").kept_until };
 }
 
 function publicLive(live) {
   return { width: live.width, height: live.height, mobile: live.mobile, headful: !!live.headful,
-    ...(live.headful ? { note: "a real Chrome window on the desktop; desktop.py screenshot shows it, F12 there opens DevTools" } : {}) };
+    ...(live.headful ? { note: "a real Chrome window on the desktop (the user can watch it in SnapLab); desktop.py screenshot shows it, F12 there opens DevTools" } : {}) };
 }
 
 function stopLive(root) {
@@ -251,12 +363,17 @@ async function main() {
     server.listen(Number(argv[1]), "127.0.0.1");
     return;
   }
+  if (argv[0] === "--live") return relay(root);
   const { command, target, steps, opts } = parseArgs(argv);
+  if (command === "host") return host(root, opts);
   if (command === "start") return console.log(JSON.stringify(await startLive(root, opts)));
   if (command === "stop") return console.log(JSON.stringify(stopLive(root)));
-  const live = liveState(root);
-  if (command === "status") return console.log(JSON.stringify(live ? { running: true, ...publicLive(live) } : { running: false }));
+  let live = liveState(root);
+  if (command === "status") return console.log(JSON.stringify(live ? { running: true, ...publicLive(live), control: controlHolder(root) } : { running: false }));
+  // With a desktop, open and do use the live window (started here when needed), so the user can watch.
+  if (!live && opts.headful && (command === "open" || command === "do")) { await startLive(root, opts); live = liveState(root); }
   if (command === "do" && !live) throw new Error("no live browser; run: node .snaplab/browser.mjs start  (then open URL)");
+  const waited = live ? await waitForUser(root) : null;
   const ms = opts.timeout * 1000;
   let server = null, base = live ? live.base : "", url = target;
   if (target && !/^(https?|file|data|about|chrome):/i.test(target)) {
@@ -277,8 +394,8 @@ async function main() {
   }
   const headful = !!(live && live.headful);
   if (live && !opts.sized) { opts.width = live.width; opts.height = live.height; opts.mobile = live.mobile; }
-  const out = { ...(target ? { url: target } : {}), live: !!live, ...(headful ? { headful: true } : {}), steps: [],
-    console_errors: [], page_errors: [], failed_requests: [] };
+  const out = { ...(target ? { url: target } : {}), live: !!live, ...(headful ? { headful: true } : {}), ...(waited ? { note: waited } : {}),
+    steps: [], console_errors: [], page_errors: [], failed_requests: [] };
   const requests = new Map(), seen = [], messages = [];
   const began = Date.now();
   try {
