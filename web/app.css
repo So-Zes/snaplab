@@ -890,6 +890,8 @@ b.plus { color: var(--good); font-weight: 750; } b.minus { color: var(--bad); fo
 .model-main .muted { font-size: 14px; overflow-wrap: anywhere; }
 .model-tags { display: flex; flex-wrap: wrap; gap: 6px; }
 .model-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.home-heading-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
+.home-heading-row .home-heading { margin-bottom: 0; }
 .advanced > summary { cursor: pointer; list-style: none; }
 .advanced > summary::-webkit-details-marker { display: none; }
 .advanced > summary::after { content: "▾"; margin-left: auto; color: var(--muted); }

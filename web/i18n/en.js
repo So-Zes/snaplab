@@ -968,6 +968,7 @@ window.SNAPLAB_I18N.en = {
   "tour.notnow": "Not now",
   "phone.title": "Phone access",
   "browser.title": "Browser",
+  "browser.nosession": "Start a SnapCode session first (ask a bot for work in a browser); its browser opens here.",
   "browser.open": "Open browser",
   "browser.watch": "Watch the browser",
   "browser.page": "The page in the browser",

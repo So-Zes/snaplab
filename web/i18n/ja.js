@@ -965,6 +965,7 @@ window.SNAPLAB_I18N.ja = {
   "tour.notnow": "今はしない",
   "phone.title": "スマホから使う",
   "browser.title": "ブラウザ",
+  "browser.nosession": "先に SnapCode のセッションを始めてください（Bot にブラウザを使う作業を頼めます）。そのブラウザがここで開きます。",
   "browser.open": "ブラウザを開く",
   "browser.watch": "ブラウザを見る",
   "browser.page": "ブラウザに表示中のページ",

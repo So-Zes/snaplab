@@ -1028,6 +1028,7 @@ window.SNAPLAB_I18N.ru = {
   "tour.notnow": "Не сейчас",
   "phone.title": "Доступ с телефона",
   "browser.title": "Браузер",
+  "browser.nosession": "Сначала запустите сессию SnapCode (попросите бота о работе в браузере); её браузер откроется здесь.",
   "browser.open": "Открыть браузер",
   "browser.watch": "Смотреть браузер",
   "browser.page": "Страница в браузере",

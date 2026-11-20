@@ -18,6 +18,8 @@ Newest first. Each entry: the date, what changed, and why.
   Why: both lists only grew, and the 1,000-token clip removed next_actions, the last field.
 ## 2026-11-21 Browser panel
 
+- Home has a Browser button next to the work heading: it opens the browser of the running SnapCode session, or
+  of the newest one. Why: the panel could only be reached from a session's page.
 - A SnapCode session's browser can be opened inside SnapLab, on the PC or the phone ("Open browser" on the session,
   `#/browser/<id>`). The user sees the page live, types an address, clicks, scrolls and types (Japanese IME
   included), switches tabs and answers page dialogs. During a turn it is the agent's own Chrome: the user watches

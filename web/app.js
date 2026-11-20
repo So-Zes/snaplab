@@ -2339,12 +2339,18 @@
         h("span", { class: "home-step-count" }, pl && pl.total ? t("home.steps", { done: pl.done, total: pl.total }) : t("home.noPlan")),
         statusPill(s.status));
     }));
+    // The browser of the newest SnapCode session (running first): the in-app browser, also between turns.
+    const browsable = S.sessions.filter((s) => ["codex", "pi"].includes(s.harness));
+    const target = browsable.find((s) => s.status === "running") || browsable[0];
+    const browserBtn = h("button", { class: "btn ghost small home-browser", type: "button", onclick: () => {
+      if (target) location.hash = "#/browser/" + target.id; else toast(t("browser.nosession"));
+    } }, icon("globe"), t("browser.title"));
     const n = needsCount();
     const body = h("div", { class: "page home" },
       h("button", { class: "home-attention" + (n ? " has-items" : ""), type: "button", onclick: needsSheet },
         icon(n ? "inbox" : "check"), h("span", { class: "home-attention-number" }, String(n)),
         h("span", {}, t(n ? "home.decisions" : "home.clear")), icon("right")),
-      h("section", {}, h("h2", { class: "home-heading" }, t("home.work")),
+      h("section", {}, h("div", { class: "home-heading-row" }, h("h2", { class: "home-heading" }, t("home.work")), browserBtn),
         work.length ? cards : h("div", { class: "home-empty" }, icon("sail"), h("p", {}, t("home.work.empty")))),
       homeAgenda(), h("section", {}, h("h2", { class: "home-heading" }, t("home.api")), h("div", { id: "home-usage" })));
     screen({ title: t("nav.home") }, body);
