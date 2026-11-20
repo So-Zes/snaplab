@@ -52,7 +52,20 @@ class LocalWorkerTest(unittest.TestCase):
             (root / "ready.json").write_text('{"ssh_port": 22}')
             worker = launch.local_worker()
             self.assertEqual(worker["backend"], "ssh")
+            self.assertIn("linux-worker", worker["remote"]["identity"])
             self.assertEqual((worker["remote"]["host"], worker["remote"]["user"]), ("127.0.0.1", "snaplab"))
+
+
+    def test_mac_uses_the_vm_worker_folder(self):
+        from tools import launch
+        with tempfile.TemporaryDirectory() as tmp, patch.object(launch, "windows", return_value=False), \
+                patch.object(launch.sys, "platform", "darwin"), patch.object(launch.Path, "home", return_value=Path(tmp)):
+            root = Path(tmp) / ".snaplab" / "mac-worker"
+            root.mkdir(parents=True)
+            (root / "ready.json").write_text('{"ssh_port": 60022, "vm": "snaplab"}')
+            worker = launch.local_worker()
+            self.assertEqual(worker["remote"]["ssh_port"], 60022)
+            self.assertIn("mac-worker", worker["remote"]["known_hosts"])
 
 
 if __name__ == "__main__":

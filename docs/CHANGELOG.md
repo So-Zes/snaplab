@@ -2,6 +2,14 @@
 
 Newest first. Each entry: the date, what changed, and why.
 
+## 2026-11-20 Mac version
+
+- `install.sh` on macOS: Homebrew Python and Git, the Keychain for keys, a LaunchAgent, and (when asked) the
+  SnapCode workspace in an Ubuntu VM made with Lima (`tools/setup_mac_worker.sh`), reached over SSH like the Linux
+  worker. Not tried on a real Mac yet; see docs/mac.md.
+- `tools/ci/install-and-test.yml`: a GitHub Actions workflow that installs on Windows, Linux and macOS runners. It
+  is kept outside .github/workflows because pushing workflows needs a GitHub login with the workflow permission.
+
 ## 2026-11-20 Linux version
 
 - `install.sh` sets up the SnapCode workspace on Linux (`tools/setup_linux_worker.sh`: a locked `snaplab` account,

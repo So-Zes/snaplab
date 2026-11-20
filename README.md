@@ -10,7 +10,8 @@ on the same PC.
 SnapLab is made for Snapscribe subscribers. It needs only your Snapscribe API key and
 your PC: the model is **Snapscribe 1**, and everything else runs at home.
 
-> **Status:** early. Windows has a one-click installer; Linux and macOS install with a script (see below).
+> **Status:** early. Windows has a one-click installer; Linux and macOS install with a script (see below). The Mac
+> version has not been tried on a real Mac yet.
 
 ## What you need
 
@@ -49,6 +50,11 @@ sh install.sh
 Debian or Ubuntu with systemd. The script installs what is missing, asks whether to set up the SnapCode workspace
 (a separate `snaplab` account on the same PC, reached over SSH from the PC only), registers a systemd user service
 and an app menu entry, and opens SnapLab in the browser. Details: [docs/linux.md](docs/linux.md).
+
+## Install on a Mac
+
+The same two lines in Terminal (Homebrew required). SnapCode's workspace is a small Ubuntu VM made with Lima;
+SnapLab starts at login through a LaunchAgent. Not yet tested on a real Mac. Details: [docs/mac.md](docs/mac.md).
 
 ## Use it from your phone
 

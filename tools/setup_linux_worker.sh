@@ -39,7 +39,10 @@ EOF
 fi
 
 echo 'Installing the desktop tools, Pi and resource limits for the SnapCode account.'
-sh "$here/setup_worker.sh" snaplab
+# setup_worker.sh runs part of itself as the snaplab account, which cannot read the installing user's home folder.
+install -d -m 755 /opt/snaplab
+install -m 644 "$here/setup_worker.sh" /opt/snaplab/setup_worker.sh
+sh /opt/snaplab/setup_worker.sh snaplab
 echo 'Installing Codex for the SnapCode account.'
 runuser -u snaplab -- sh -c 'export PATH="$HOME/.local/bin:$PATH"; npm install --global --prefix "$HOME/.local" @openai/codex'
 if [ "$(dpkg --print-architecture)" = amd64 ] && ! command -v google-chrome >/dev/null 2>&1; then
