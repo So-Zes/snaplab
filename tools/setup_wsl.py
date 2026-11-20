@@ -17,7 +17,6 @@ import tarfile
 import time
 import urllib.request
 
-DISTRO = "SnapLab-Worker"
 BASE = "https://cdimage.ubuntu.com/ubuntu-base/releases/24.04/release/"
 IMAGE = "ubuntu-base-24.04.5-base-amd64.tar.gz"
 WSL_CONF = """[automount]
@@ -34,6 +33,7 @@ default=root
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+from snaplab.harnesses.wsl import DISTRO  # noqa: E402
 
 
 def configure(root, *, packages=True):
@@ -214,7 +214,7 @@ def main():
         raise SystemExit("WSL is unavailable. Install WSL2 using Microsoft's instructions, restart if requested, then run setup again. This program will not enable Windows features or request administrator access.")
     if DISTRO in decode(listed.stdout).splitlines():
         if not args.resume or not (root / 'setup-result.json').exists():
-            raise SystemExit("SnapLab-Worker already exists. Nothing was overwritten. To update a SnapLab-created environment, run tools/setup_wsl.py --resume.")
+            raise SystemExit(DISTRO + " already exists. Nothing was overwritten. To update a SnapLab-created environment, run tools/setup_wsl.py --resume.")
         from snaplab.harnesses.wsl import exclusive
         with exclusive():
             (root / 'ready.json').unlink(missing_ok=True)

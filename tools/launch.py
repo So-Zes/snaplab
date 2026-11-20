@@ -76,6 +76,8 @@ def launch(data, port=18445, open_browser=True):
             time.sleep(.1)
         else:
             raise ValueError("SnapLab did not become ready. Check its logs folder before running the launcher again.")
+    if not open_browser:
+        return {"url": f"http://127.0.0.1:{port}/", "port": port, "data": str(data)}
     token, _ = AuthStore(data / "auth.json").new_pairing("This PC", .25)
     url = f"http://127.0.0.1:{port}/local#{token}"
     if open_browser:
@@ -89,16 +91,23 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data", default=os.environ.get("SNAPLAB_DATA") or str(Path.home() / ".snaplab" / "data"))
     parser.add_argument("--port", type=int, default=int(os.environ.get("SNAPLAB_PORT") or 18445))
+    parser.add_argument("--no-browser", action="store_true", help="only make sure SnapLab is running (used at sign-in)")
     args = parser.parse_args()
     if not 1024 <= args.port <= 65535:
         parser.error("Choose a port from 1024 to 65535.")
     try:
-        result = launch(args.data, args.port)
+        result = launch(args.data, args.port, open_browser=not args.no_browser)
         print(f"SnapLab is ready at http://127.0.0.1:{result['port']}. Run the same command to open it again.")
         return 0
     except (ValueError, OSError):
         # Exception text may come from a damaged settings file; print only our own safe messages.
-        print("SnapLab could not open. Check that the data folder is empty on first use, its port is free, and Python dependencies are installed. Your existing files were kept.")
+        message = ("SnapLab could not open. Check that the data folder is empty on first use, its port is free, "
+                   "and Python dependencies are installed. Your existing files were kept.")
+        print(message)
+        if sys.stdout is None and os.name == "nt" and not args.no_browser:
+            # Started from the Start menu with pythonw: there is no console, so say it in a window.
+            import ctypes
+            ctypes.windll.user32.MessageBoxW(None, message, "SnapLab", 0x10)
         return 1
 
 

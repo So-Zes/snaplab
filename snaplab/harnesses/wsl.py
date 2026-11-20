@@ -15,7 +15,8 @@ import time
 
 from .base import TurnResult
 
-DISTRO = 'SnapLab-Worker'
+# Both can be overridden so a second installation (or a test) on the same PC never touches the first one.
+DISTRO = os.environ.get('SNAPLAB_WSL_DISTRO') or 'SnapLab-Worker'
 ROOT = Path(__file__).resolve().parents[2]
 MANAGED = ('snaplab/harnesses/wsl_runtime.py', 'snaplab/harnesses/wsl_network.py',
            'tools/check_wsl_isolation.py', 'tools/wsl_sshd.py', 'tools/setup_worker.sh')
@@ -31,6 +32,8 @@ def directory():
     """The WSL worker's keys and records, outside AppData (2026-11-16). A program installed as an app package, such as
     the Claude desktop app from which setup is often run, gets its own private copy of AppData: what setup wrote there
     was invisible to the SnapLab logon task, which then reported wsl_not_ready although setup had passed."""
+    if os.environ.get('SNAPLAB_WSL_DIR'):
+        return Path(os.environ['SNAPLAB_WSL_DIR'])
     root = Path.home() / '.snaplab' / 'wsl'
     _adopt_legacy(root)
     return root
