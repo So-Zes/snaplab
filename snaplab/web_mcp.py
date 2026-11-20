@@ -131,6 +131,9 @@ class WebMCP:
         if not isinstance(args, dict):
             return {"content": [{"type": "text", "text": "Error: arguments must be an object."}], "isError": True}
         self.reject_secret(args)
+        # The server runs on this PC: the home-folder placeholder the model saw becomes the real folder again,
+        # exactly as for a chat bot's tool call (llm.py). The workspace itself only ever sees the placeholder.
+        args = json.loads(self.app.redactor.restore_paths(json.dumps(args, ensure_ascii=False)))
         with self.lock:
             turn = self.turns.get(sid)
         if not turn or not self.authorized(sid, token):
@@ -146,7 +149,7 @@ class WebMCP:
         except Exception:  # noqa: BLE001 - never echo a provider's exception text
             return {"content": [{"type": "text", "text": "Error: the service call failed."}], "isError": True}
         ctl.emit({"kind": "tool", "text": name, "record": res.record})
-        return {"content": [{"type": "text", "text": self.app.guard.clean(res.content)}],
+        return {"content": [{"type": "text", "text": self.app.redactor.clean(res.content)}],
                 "isError": res.content.startswith("Error")}
 
     def handle_http(self, handler):

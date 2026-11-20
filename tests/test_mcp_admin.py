@@ -113,6 +113,16 @@ class AdminTest(unittest.TestCase):
         self.assertEqual([(r["name"], r["ok"]) for r in result["results"]], [("goodone", True), ("bad", False)])
         self.assertIn("goodone_echo", self.app.plugin_tools)
 
+    def test_workspace_sees_placeholders_and_the_pc_server_gets_real_paths(self):
+        home = self.app.redactor.home
+        project = self.app.create_project(name="Note check", description="Read " + home + "\notes\note.txt with the tool")
+        brief = (Path(self.app.cfg["projects_dir"]) / project["slug"] / "BRIEF.md").read_text(encoding="utf-8-sig")
+        self.assertNotIn(home, brief)
+        placeholder = self.app.redactor.clean(home + "\notes")
+        self.assertNotIn(home, placeholder)
+        restored = self.app.redactor.restore_paths(placeholder)
+        self.assertEqual(restored, home + "\notes")
+
     def test_config_servers_are_listed_but_not_removable(self):
         self.app.cfg["mcp_servers"] = {"cfgsrv": {"url": "http://127.0.0.1:9/mcp"}}
         self.assertEqual(mcp_admin.view(self.app)[0]["source"], "config")

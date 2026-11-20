@@ -826,7 +826,8 @@ class App:
         folder = root / slug
         folder.mkdir(parents=True, exist_ok=False)
         desc = " ".join((description or "").split())[:600]
-        commit = gitops.init_repo(folder, {"BRIEF.md": self.guard.clean(brief_text(name, desc, tests, self.lang, ssh=self.cfg.get('codex', {}).get('backend') == 'ssh')),
+        # The brief goes into the Linux workspace: private values (the PC user's name, home folder) stay hidden there.
+        commit = gitops.init_repo(folder, {"BRIEF.md": self.redactor.clean(brief_text(name, desc, tests, self.lang, ssh=self.cfg.get('codex', {}).get('backend') == 'ssh')),
                                            "AGENTS.md": self.guard.clean(agents_text(name))})
         p = {"id": new_id("p"), "name": name, "slug": slug, "description": desc, "test_command": tests, "bot": bot,
              "git": bool(commit), "first_commit": commit}
@@ -922,7 +923,7 @@ class App:
         p = self.store.project(pid)
         if not p:
             raise LookupError("no such project")
-        text = self.guard.clean((text or "").strip()[:8000])
+        text = self.redactor.clean((text or "").strip()[:8000])
         if not text:
             raise ValueError("the brief is empty")
         folder = Path(self.cfg["projects_dir"]) / p["slug"]
