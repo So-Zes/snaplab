@@ -642,6 +642,8 @@ class Handler(BaseHTTPRequestHandler):
                 return app.phone.disable()
             if action == "decline":
                 return app.phone.decline()
+            if action == "ack":
+                return app.phone.ack()
             raise ValueError("unknown action")
         if path == "/api/providers":
             from .setup import configure

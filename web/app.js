@@ -881,7 +881,7 @@
         h("button", { class: "btn ghost", type: "button", onclick: () => phoneAction("pair") }, icon("refresh"), t("phone.pair.new"))]);
     } else if (st.step === "done") {
       append(card, [h("h3", { class: "card-h" }, icon("check"), t("phone.done")), h("p", { class: "hint" }, t("phone.done.body")),
-        h("a", { class: "btn primary wide", href: "#/home" }, t("phone.finish"))]);
+        h("button", { class: "btn primary wide", type: "button", onclick: () => api("/api/phone", { action: "ack" }).catch(() => {}).then(() => go("#/home")) }, t("phone.finish"))]);
     }
     return out;
   }
@@ -3105,7 +3105,8 @@
   }
   function modelDescription(ref, kind="chat") {
     const m=(S.models || []).find(x=>x.name===(ref || (S.routing || {})[kind]));
-    return m ? m.model + " · " + (m.provider_label || m.provider) : (ref || "");
+    // Snapscribe shows only its product name ("Snapscribe 1"), so the model behind it can change.
+    return m ? (m.kind === "snapscribe" ? m.label : m.model + " · " + (m.provider_label || m.provider)) : (ref || "");
   }
 
   function modelsCard() {
@@ -3113,7 +3114,7 @@
     if (!models.length) return null;
     return h("div", { class: "card form models" }, h("h3", { class: "card-h" }, icon("brain"), t("settings.models")),
       h("div", { class: "model-rows" }, models.map((m) => h("div", { class: "model-row" },
-        h("div", { class: "model-main" }, h("b", {}, m.label), h("span", { class: "muted" }, m.provider + " · " + m.model + " · " + t("settings.models.ctx", { n: m.context_limit % 1024 === 0 ? (m.context_limit / 1024) + "K" : num(m.context_limit) }))),
+        h("div", { class: "model-main" }, h("b", {}, m.label), h("span", { class: "muted" }, (m.kind === "snapscribe" ? m.provider_label : m.provider + " · " + m.model) + " · " + t("settings.models.ctx", { n: m.context_limit % 1024 === 0 ? (m.context_limit / 1024) + "K" : num(m.context_limit) }))),
         h("div", { class: "model-tags" },
           (m.default_for || []).filter((k) => k !== "default").map((k) => h("span", { class: "tag" }, t("settings.models.for." + k))),
           h("span", { class: "tag " + (m.key_set ? "good" : "bad") }, t(m.key_set ? "settings.models.key" : "settings.models.nokey")))))),

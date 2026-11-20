@@ -179,6 +179,7 @@ class ModelRegistry:
             sp = self.spec(name)
             out.append({"name": name, "label": sp["label"], "provider": sp["provider"], "model": sp["model"],
                         "provider_label": self.cfg["providers"][sp["provider"]].get("label") or sp["provider"],
+                        "kind": self.cfg["providers"][sp["provider"]].get("kind"),
                         "base_url": sp["base_url"], "capabilities": sp["capabilities"],
                         "context_limit": sp["context_limit"], "key_set": self.has_key(name) if self.override is None else
                         bool(get_api_key(sp["api_key_env"])),

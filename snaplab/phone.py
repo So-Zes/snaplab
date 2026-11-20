@@ -335,6 +335,13 @@ class Phone:
         self._pair = None
         return self.summary()
 
+    def ack(self) -> dict:
+        """The user saw the result: next time the page shows the plain on/off state."""
+        with self.lock:
+            if self.state.get("step") in ("done", "pair_timeout"):
+                self.state = {"step": "idle", "error": None, "auth_url": None, "enable_url": None}
+        return self.summary()
+
     def decline(self) -> dict:
         self.app.store.update_settings(phone={**self.settings(), "offered": True})
         return self.summary()
