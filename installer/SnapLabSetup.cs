@@ -642,6 +642,23 @@ namespace SnapLabSetup
         {
             // Stop the running SnapLab from this installation (its Python processes run from the app folder).
             Shell.Run("powershell.exe", "-NoProfile -NonInteractive -Command \"Get-CimInstance Win32_Process -Filter \\\"Name LIKE 'python%'\\\" | Where-Object { $_.CommandLine -like '*" + o.AppDir.Replace("'", "''") + "*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }\"", null, 120000, null, null);
+            // Phone access: take this installation's address out of `tailscale serve`, or it would point at nothing.
+            try
+            {
+                string settings = Path.Combine(o.DataDir, "settings.json");
+                if (File.Exists(settings))
+                {
+                    var phone = System.Text.RegularExpressions.Regex.Match(File.ReadAllText(settings), "\"phone\"\\s*:\\s*\\{[^}]*\\}");
+                    if (phone.Success && System.Text.RegularExpressions.Regex.IsMatch(phone.Value, "\"enabled\"\\s*:\\s*true"))
+                    {
+                        var port = System.Text.RegularExpressions.Regex.Match(phone.Value, "\"https_port\"\\s*:\\s*(\\d+)");
+                        string ts = Shell.Which("tailscale.exe") ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Tailscale", "tailscale.exe");
+                        if (File.Exists(ts))
+                            Shell.Run(ts, "serve --https=" + (port.Success ? port.Groups[1].Value : "8445") + " off", null, 60000, null, null);
+                    }
+                }
+            }
+            catch (Exception ex) { Log.Write("phone access cleanup: " + ex.Message); }
             if (o.DeleteData && File.Exists(o.VenvPython))
             {
                 // Saved API keys are named after the data folder; remove only this installation's keys.
