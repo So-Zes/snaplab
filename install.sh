@@ -168,6 +168,14 @@ EOF
     echo 'SnapLab starts by itself when you log in (LaunchAgent com.snaplab.app).'
 fi
 
+# The service just (re)started SnapLab: wait until it answers, so the launcher below opens it instead of starting a
+# second copy on the same port.
+if [ -f "$HOME/.config/systemd/user/snaplab.service" ] || [ -f "$HOME/Library/LaunchAgents/com.snaplab.app.plist" ]; then
+    i=0
+    until "$venv_python" -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:$port/healthz', timeout=1)" 2>/dev/null; do
+        i=$((i + 1)); [ "$i" -ge 40 ] && break; sleep 1
+    done
+fi
 browser=""
 [ "${SNAPLAB_NO_BROWSER:-}" = 1 ] && browser="--no-browser"
 "$venv_python" "$install_dir/tools/launch.py" --data "$data_dir" --port "$port" $browser
