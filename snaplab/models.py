@@ -40,10 +40,22 @@ def derive(cfg: dict) -> None:
     models = cfg.setdefault("models", {}) or {}
     qwen = "qwen" in str(api.get("model") or "").lower()
     provider_name, model_name = ("snapscribe", "qwen") if qwen or cfg.get("_legacy_api_names") else ("default", "default")
+    same = [n for n, m in models.items() if isinstance(m, dict) and m.get("model") == api.get("model")
+            and (providers.get(m.get("provider")) or {}).get("base_url") == api.get("base_url")]
+    if same:
+        # The setup page writes the model as a provider and model and also as the old "api" block; the block must
+        # not add a second copy of the same model.
+        routing = cfg.setdefault("routing", {}) or {}
+        routing.setdefault("default", same[0])
+        for k in KINDS:
+            routing.setdefault(k, routing["default"])
+        cfg["providers"], cfg["models"], cfg["routing"] = providers, models, routing
+        return
     providers.setdefault(provider_name, {
         "base_url": api.get("base_url"), "api_key_env": api.get("api_key_env") or "SNAPSCRIBE_API_KEY",
         "user_agent": api.get("user_agent") or "snaplab/0.1", "timeout_s": api.get("timeout_s", 600),
-        "key_expires": api.get("key_expires"), "slots": "shared", "label": "Snapscribe" if qwen else "Default"})
+        "key_expires": api.get("key_expires"), "slots": "shared", "label": "Snapscribe" if qwen else "Default",
+        **({"kind": "snapscribe"} if qwen else {})})
     models.setdefault(model_name, {
         "provider": provider_name, "model": api.get("model") or "configure-model",
         "context_limit": api.get("context_limit") or 131072,

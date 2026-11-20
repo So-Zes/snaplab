@@ -34,5 +34,19 @@ class PresetTest(unittest.TestCase):
         self.assertEqual(models.SNAPSCRIBE_LABEL, presets.SNAPSCRIBE_LABEL)
 
 
+
+class DeriveTest(unittest.TestCase):
+    def test_setup_written_model_is_not_listed_twice(self):
+        from snaplab.models import derive
+        url = presets.snapscribe()["base_url"]
+        cfg = {"api": {"base_url": url, "model": "qwen3.8-27b", "api_key_env": "K"},
+               "providers": {"snapscribe-1a2b": {"base_url": url, "api_key_env": "K", "kind": "snapscribe"}},
+               "models": {"snapscribe-1a2b": {"provider": "snapscribe-1a2b", "model": "qwen3.8-27b"}},
+               "routing": {}}
+        derive(cfg)
+        self.assertEqual(list(cfg["models"]), ["snapscribe-1a2b"])
+        self.assertEqual(cfg["routing"]["chat"], "snapscribe-1a2b")
+
+
 if __name__ == "__main__":
     unittest.main()
