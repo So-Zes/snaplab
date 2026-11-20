@@ -644,7 +644,9 @@ namespace SnapLabSetup
         readonly Panel page = new Panel();
         readonly FlowLayoutPanel buttons = new FlowLayoutPanel();
         readonly Dictionary<string, Label[]> rows = new Dictionary<string, Label[]>();
-        Label detail;
+        Label detail, elapsed;
+        DateTime stepStarted;
+        readonly System.Windows.Forms.Timer clock = new System.Windows.Forms.Timer();
         bool busy;
         int shot;
         Font body, heading, small;
@@ -683,6 +685,13 @@ namespace SnapLabSetup
                     e.Cancel = true;
             };
             Shown += (s, e) => { if (o.Uninstall) ShowUninstall(); else ShowWelcome(null); };
+            clock.Interval = 1000;
+            clock.Tick += (s, e) =>
+            {
+                if (elapsed == null || elapsed.IsDisposed) return;
+                var span = DateTime.Now - stepStarted;
+                elapsed.Text = ((int)span.TotalMinutes).ToString() + ":" + span.Seconds.ToString("00");
+            };
         }
 
         FlowLayoutPanel NewPage(string title)
@@ -805,6 +814,7 @@ namespace SnapLabSetup
             bar.Size = new Size(ClientSize.Width - page.Padding.Horizontal - 24, 8);
             bar.Margin = new Padding(0, 18, 0, 6);
             flow.Controls.Add(bar);
+            elapsed = Para(flow, "", small, Muted, 0);
             detail = Para(flow, "", small, Muted, 0);
             detail.AutoSize = false;
             detail.Size = new Size(ClientSize.Width - page.Padding.Horizontal - 24, 40);
@@ -822,7 +832,7 @@ namespace SnapLabSetup
             if (InvokeRequired) { BeginInvoke(new Action(() => SetStep(key, state))); return; }
             Label[] r;
             if (!rows.TryGetValue(key, out r)) return;
-            if (state == "running") { r[0].Text = "➜"; r[0].ForeColor = Brand; r[1].ForeColor = Ink; r[1].Font = new Font(body, FontStyle.Bold); }
+            if (state == "running") { stepStarted = DateTime.Now; clock.Start(); r[0].Text = "➜"; r[0].ForeColor = Brand; r[1].ForeColor = Ink; r[1].Font = new Font(body, FontStyle.Bold); }
             else if (state == "done") { r[0].Text = "✔"; r[0].ForeColor = Good; r[1].ForeColor = Ink; r[1].Font = body; }
             else if (state == "failed") { r[0].Text = "✖"; r[0].ForeColor = Bad; r[1].ForeColor = Bad; r[1].Font = body; }
             else { r[0].Text = "–"; r[0].ForeColor = Muted; r[1].ForeColor = Muted; r[1].Font = body; }
@@ -834,7 +844,7 @@ namespace SnapLabSetup
             if (detail == null) return;
             if (InvokeRequired) { BeginInvoke(new Action(() => SetDetail(line))); return; }
             string t = line.Trim();
-            if (t.StartsWith("[step]") || t.StartsWith(">")) return;
+            if (t.StartsWith("[step]") || t.StartsWith(">") || t.StartsWith("exit ") || t.StartsWith("stopped after")) return;
             if (t.Length > 160) t = t.Substring(0, 160) + "...";
             detail.Text = t;
         }
