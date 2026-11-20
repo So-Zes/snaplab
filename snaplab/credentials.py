@@ -79,7 +79,7 @@ def _file_read() -> dict:
     try:
         data = json.loads(_file().read_text(encoding="utf-8"))
         return data if isinstance(data, dict) else {}
-    except (OSError, ValueError):
+    except Exception:      # missing, unreadable or not JSON: no saved values
         return {}
 
 
