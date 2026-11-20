@@ -330,12 +330,20 @@ folder, sessions only), `ctx.lang`, `ctx.read_web` (external reads in this turn 
 
 ### External MCP servers
 
-Tools of a Streamable HTTP MCP server become bot tools without writing a plugin:
+The easy way is **Settings > Tools (MCP servers) > Add a server**: paste the JSON block a server's README gives
+for Claude Desktop, Claude Code or Cursor (`{"mcpServers": {...}}`), or enter a command line or a URL. SnapLab
+starts the server once to list its tools before it saves anything, keeps secret environment values and tokens in
+the OS credential store (the file `data/mcp_servers.json` only names them), and applies the change without a
+restart. Stdio servers (`command` and `args`) run on this PC as the user and stay running; SnapCode reaches them
+through SnapLab, so the isolated workspace never runs them itself.
+
+In `config.json` the same servers can be written by hand, and Streamable HTTP servers work too:
 
 ```json
 "mcp_servers": {
   "notes": {"url": "http://127.0.0.1:8765/mcp",
-            "approvals": {"delete_note": "always"}}
+            "approvals": {"delete_note": "always"}},
+  "files": {"command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem", "C:\\Users\\me\\Documents"]}
 }
 ```
 
@@ -356,7 +364,7 @@ Tools of a Streamable HTTP MCP server become bot tools without writing a plugin:
   for, especially when two entries point at the same kind of server (for example two accounts on one service).
 - `bearer_env` names an environment variable whose value is sent as `Authorization: Bearer ...`.
 - The tool list is cached in `data/mcp_tools.json`: if the server is down when SnapLab starts, bots keep the
-  tools and a call returns an error they can explain. Restart SnapLab after the server adds tools.
+  tools and a call returns an error they can explain. **Check** in Settings lists the tools again.
 
 ---
 

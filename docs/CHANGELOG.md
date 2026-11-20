@@ -2,6 +2,16 @@
 
 Newest first. Each entry: the date, what changed, and why.
 
+## 2026-11-20 MCP servers from Settings
+
+- Settings > Tools (MCP servers): add a server by pasting its JSON (the Claude Desktop / Claude Code / Cursor
+  form), a command line, or a URL; check it, switch chat use on or off, remove it. Each server is started once
+  to list its tools before it is saved; secret values go to the OS credential store. Why: users should add the
+  MCP servers they already use without editing config.json, and bots, Pi and Codex should all get them.
+- stdio MCP servers (`command`/`args`) are supported next to Streamable HTTP. They run on the PC and SnapCode
+  reaches them through the snaplab_web bridge. Changes apply without a restart (`app.reload_mcp`).
+- The room header and Settings show "Snapscribe 1" instead of the model id behind it.
+
 ## 2026-11-20 Windows installer, first-run tour, phone access
 
 - `SnapLab-Setup.exe` (installer/): explains why it needs administrator permission, asks for it only when WSL,

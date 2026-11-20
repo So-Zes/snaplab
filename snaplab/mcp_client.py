@@ -19,7 +19,10 @@ jobs to SnapCode to keep its own context small, for example when the user asks f
 for SnapCode only; chat bots are then just told it exists. Sessions run unattended, so tools that would need a
 proposal card are not offered there.
 
-Only Streamable HTTP servers are supported (JSON or SSE responses). Each tool becomes a bot tool named
+Two kinds of servers: Streamable HTTP ("url", JSON or SSE responses) and stdio ("command" and "args", the form most
+MCP servers document for Claude Code, Codex and other clients). A stdio server runs on this PC as the user, started on
+first use and kept running; servers added in Settings live in <data>/mcp_servers.json (mcp_admin.py) with their
+secret environment values in the OS credential store. Each tool becomes a bot tool named
 `<server>_<tool>`. Approval defaults: tools run directly, except tools the server marks destructiveHint, which
 show a proposal card first ("always"). A per-tool entry, or the global "approvals" block, overrides that. Results are wrapped as
 untrusted material by default, so later protected actions in the same conversation ask the user first.
@@ -29,10 +32,14 @@ tools; calling them while it is down returns an error to the bot instead of brea
 """
 from __future__ import annotations
 
+import collections
 import json
 import os
 import re
+import shutil
+import subprocess
 import threading
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -61,7 +68,43 @@ def _sse_messages(text: str):
         yield "\n".join(data)
 
 
-class MCPClient:
+class _Tools:
+    """tools/list and tools/call on top of call(method, params); shared by both transports."""
+
+    def list_tools(self) -> list[dict]:
+        tools, cursor = [], None
+        for _ in range(20):
+            result = self.call("tools/list", {"cursor": cursor} if cursor else {})
+            tools += [t for t in result.get("tools") or [] if isinstance(t, dict) and t.get("name")]
+            cursor = result.get("nextCursor")
+            if not cursor:
+                break
+        return tools
+
+    def call_tool(self, tool: str, args: dict) -> tuple[str, bool]:
+        result = self.call("tools/call", {"name": tool, "arguments": args})
+        parts = []
+        for item in result.get("content") or []:
+            if not isinstance(item, dict):
+                continue
+            if item.get("type") == "text":
+                parts.append(str(item.get("text") or ""))
+            elif item.get("type") == "resource" and isinstance(item.get("resource"), dict):
+                parts.append(str(item["resource"].get("text") or ""))
+            else:
+                parts.append(f"[{item.get('type')} content omitted]")
+        if not parts and result.get("structuredContent") is not None:
+            parts.append(json.dumps(result["structuredContent"], ensure_ascii=False))
+        text = "\n".join(parts).strip()
+        if len(text) > MAX_RESULT_CHARS:
+            text = text[:MAX_RESULT_CHARS] + f"\n…[{len(text) - MAX_RESULT_CHARS} characters cut]"
+        return text, bool(result.get("isError"))
+
+    def close(self) -> None:
+        pass
+
+
+class MCPClient(_Tools):
     """A small Streamable HTTP client: initialize once, then tools/list and tools/call."""
 
     def __init__(self, name: str, url: str, *, token: str | None = None, timeout_s: float = 30):
@@ -137,34 +180,147 @@ class MCPClient:
                         raise MCPError(f"{self.name} keeps dropping the session") from None
             raise MCPError(f"{self.name} keeps dropping the session")
 
-    def list_tools(self) -> list[dict]:
-        tools, cursor = [], None
-        for _ in range(20):
-            result = self.call("tools/list", {"cursor": cursor} if cursor else {})
-            tools += [t for t in result.get("tools") or [] if isinstance(t, dict) and t.get("name")]
-            cursor = result.get("nextCursor")
-            if not cursor:
-                break
-        return tools
 
-    def call_tool(self, tool: str, args: dict) -> tuple[str, bool]:
-        result = self.call("tools/call", {"name": tool, "arguments": args})
-        parts = []
-        for item in result.get("content") or []:
-            if not isinstance(item, dict):
+class StdioMCPClient(_Tools):
+    """An MCP server started as a program on this PC, talking newline-delimited JSON-RPC on stdin/stdout.
+
+    Started on first use and kept running; started again when it has exited. Requests from the server (ping,
+    roots, sampling) get a ping reply or "not supported"."""
+
+    def __init__(self, name: str, command: str, args=(), *, env: dict | None = None, cwd: str | None = None,
+                 timeout_s: float = 30):
+        if not command:
+            raise MCPError(f"MCP server {name!r} needs a command")
+        self.name, self.command, self.args = name, str(command), [str(a) for a in args or []]
+        self.env, self.cwd, self.timeout_s = dict(env or {}), cwd, float(timeout_s)
+        self.proc: subprocess.Popen | None = None
+        self.ready = False
+        self.instructions = ""
+        self.stderr_tail: collections.deque = collections.deque(maxlen=12)
+        self._id = 0
+        self._lock = threading.Lock()
+        self._cond = threading.Condition()
+        self._replies: dict = {}
+        self._write_lock = threading.Lock()
+
+    def _start(self) -> None:
+        exe = shutil.which(self.command) or self.command
+        flags = 0x08000000 if os.name == "nt" else 0          # no console window
+        try:
+            self.proc = subprocess.Popen([exe, *self.args], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                         stderr=subprocess.PIPE, env={**os.environ, **self.env}, cwd=self.cwd or None,
+                                         creationflags=flags, start_new_session=os.name != "nt")
+        except OSError as e:
+            raise MCPError(f"{self.name} could not start ({e.strerror or e})") from None
+        self.ready = False
+        threading.Thread(target=self._read_out, args=(self.proc,), daemon=True, name=f"mcp-{self.name}").start()
+        threading.Thread(target=self._read_err, args=(self.proc,), daemon=True).start()
+
+    def _read_out(self, proc) -> None:
+        for raw in iter(proc.stdout.readline, b""):
+            try:
+                msg = json.loads(raw.decode("utf-8", "replace"))
+            except ValueError:
                 continue
-            if item.get("type") == "text":
-                parts.append(str(item.get("text") or ""))
-            elif item.get("type") == "resource" and isinstance(item.get("resource"), dict):
-                parts.append(str(item["resource"].get("text") or ""))
+            if not isinstance(msg, dict):
+                continue
+            if "method" in msg and "id" in msg:
+                reply = {"jsonrpc": "2.0", "id": msg["id"]}
+                if msg["method"] == "ping":
+                    reply["result"] = {}
+                else:
+                    reply["error"] = {"code": -32601, "message": "not supported by SnapLab"}
+                try:
+                    self._write(proc, reply)
+                except OSError:
+                    pass
+            elif "id" in msg:
+                with self._cond:
+                    self._replies[msg["id"]] = msg
+                    self._cond.notify_all()
+        with self._cond:
+            self._cond.notify_all()
+
+    def _read_err(self, proc) -> None:
+        for raw in iter(proc.stderr.readline, b""):
+            line = raw.decode("utf-8", "replace").strip()
+            if line:
+                self.stderr_tail.append(line[:300])
+
+    def _write(self, proc, obj: dict) -> None:
+        with self._write_lock:
+            proc.stdin.write((json.dumps(obj, ensure_ascii=False) + "\n").encode("utf-8"))
+            proc.stdin.flush()
+
+    def _gone(self) -> str:
+        tail = " | ".join(list(self.stderr_tail)[-3:])
+        return f"{self.name} stopped" + (f": {tail}" if tail else "")
+
+    def _send(self, payload: dict, expect_reply: bool = True):
+        proc = self.proc
+        try:
+            self._write(proc, payload)
+        except (OSError, ValueError):
+            raise MCPError(self._gone()) from None
+        if not expect_reply:
+            return None
+        deadline = time.monotonic() + self.timeout_s
+        with self._cond:
+            while payload["id"] not in self._replies:
+                if proc.poll() is not None:
+                    raise MCPError(self._gone())
+                left = deadline - time.monotonic()
+                if left <= 0:
+                    raise MCPError(f"{self.name} did not answer within {int(self.timeout_s)} s")
+                self._cond.wait(min(left, 1.0))
+            msg = self._replies.pop(payload["id"])
+        if msg.get("error"):
+            raise MCPError(f"{self.name}: {(msg['error'] or {}).get('message') or 'error'}")
+        return msg.get("result") or {}
+
+    def call(self, method: str, params: dict | None = None) -> dict:
+        with self._lock:
+            if self.proc is None or self.proc.poll() is not None:
+                self._start()
+            if not self.ready:
+                self._id += 1
+                result = self._send({"jsonrpc": "2.0", "id": self._id, "method": "initialize",
+                                     "params": {"protocolVersion": PROTOCOL, "capabilities": {},
+                                                "clientInfo": {"name": "snaplab", "version": "0.2"}}})
+                self.instructions = str(result.get("instructions") or "")[:2000]
+                self._send({"jsonrpc": "2.0", "method": "notifications/initialized"}, expect_reply=False)
+                self.ready = True
+            self._id += 1
+            return self._send({"jsonrpc": "2.0", "id": self._id, "method": method, "params": params or {}})
+
+    def close(self) -> None:
+        proc, self.proc = self.proc, None
+        if not proc:
+            return
+        if proc.poll() is not None:
+            for pipe in (proc.stdin, proc.stdout, proc.stderr):
+                try:
+                    pipe.close()
+                except OSError:
+                    pass
+            return
+        try:
+            if os.name == "nt":            # npx and similar start a child process: end the whole tree
+                subprocess.run(["taskkill", "/T", "/F", "/PID", str(proc.pid)], capture_output=True, timeout=20,
+                               creationflags=0x08000000)
             else:
-                parts.append(f"[{item.get('type')} content omitted]")
-        if not parts and result.get("structuredContent") is not None:
-            parts.append(json.dumps(result["structuredContent"], ensure_ascii=False))
-        text = "\n".join(parts).strip()
-        if len(text) > MAX_RESULT_CHARS:
-            text = text[:MAX_RESULT_CHARS] + f"\n…[{len(text) - MAX_RESULT_CHARS} characters cut]"
-        return text, bool(result.get("isError"))
+                os.killpg(proc.pid, 15)
+        except (OSError, subprocess.SubprocessError):
+            proc.kill()
+        try:
+            proc.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+        for pipe in (proc.stdin, proc.stdout, proc.stderr):
+            try:
+                pipe.close()
+            except OSError:
+                pass
 
 
 class _Expired(Exception):
@@ -355,7 +511,24 @@ def _cache_path(cfg: dict) -> Path:
     return Path(cfg["data_dir"]) / "mcp_tools.json"
 
 
-def load(cfg: dict, reserved: set[str], log=print, clients: dict | None = None) -> dict[str, PluginTool]:
+def make_client(server: str, conf: dict, secret=None):
+    """The client for one configured server. secret(target) reads a value from the OS credential store."""
+    env = {k: str(v) for k, v in (conf.get("env") or {}).items()}
+    for key, target in (conf.get("env_secrets") or {}).items():
+        value = secret(target) if secret else None
+        if value:
+            env[key] = value
+    if conf.get("command"):
+        return StdioMCPClient(server, conf["command"], conf.get("args") or [], env=env, cwd=conf.get("cwd"),
+                              timeout_s=conf.get("timeout_s", 60))
+    token = os.environ.get(conf["bearer_env"]) if conf.get("bearer_env") else None
+    if conf.get("bearer_secret") and secret:
+        token = secret(conf["bearer_secret"]) or token
+    return MCPClient(server, conf.get("url") or "", token=token, timeout_s=conf.get("timeout_s", 30))
+
+
+def load(cfg: dict, reserved: set[str], log=print, clients: dict | None = None, opened: dict | None = None,
+         secret=None, errors: dict | None = None) -> dict[str, PluginTool]:
     """Connect each configured server and turn its tools into PluginTools (cached list when it is down)."""
     servers = cfg.get("mcp_servers") or {}
     if not servers:
@@ -373,15 +546,17 @@ def load(cfg: dict, reserved: set[str], log=print, clients: dict | None = None) 
         if not SERVER_RE.match(server):
             log(f"MCP server {server!r} skipped: use 2-16 lowercase letters or digits as its name")
             continue
-        token = os.environ.get(conf["bearer_env"]) if conf.get("bearer_env") else None
         try:
-            client = (clients or {}).get(server) or MCPClient(server, conf.get("url") or "", token=token,
-                                                             timeout_s=conf.get("timeout_s", 30))
+            client = (clients or {}).get(server) or make_client(server, conf, secret)
         except MCPError as e:
             log(str(e))
+            if errors is not None:
+                errors[server] = str(e)
             continue
+        if opened is not None:
+            opened[server] = client
         normal_timeout = client.timeout_s
-        client.timeout_s = min(normal_timeout, 5.0)       # a hanging server must not hold up SnapLab's start
+        client.timeout_s = min(normal_timeout, float(conf.get("start_timeout_s", 5.0)))  # a hanging server must not hold up the start
         try:
             specs = client.list_tools()
             if cache.get(server) != specs:
@@ -390,6 +565,8 @@ def load(cfg: dict, reserved: set[str], log=print, clients: dict | None = None) 
         except MCPError as e:
             specs = cache.get(server) or []
             log(f"MCP server {server}: {e}; " + (f"using {len(specs)} cached tools" if specs else "no tools yet"))
+            if errors is not None:
+                errors[server] = str(e)
         finally:
             client.timeout_s = normal_timeout
         found.update(make_tools(server, client, specs, conf, reserved | set(found), log=log))

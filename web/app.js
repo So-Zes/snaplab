@@ -3083,6 +3083,7 @@
         h("a", { class: "btn ghost", href: "#/phone" }, t("phone.open"), icon("right"))),
       h("div", { class: "card form" }, h("h3", { class: "card-h" }, icon("sail"), t("settings.install")), h("p", { class: "hint" }, t("settings.install.body")), installBtn()),
       modelsCard(),
+      mcpCard(),
       backgroundCard(),
       h("div", { class: "card form privacy" }, icon("shield"), h("p", {}, t("settings.privacy"))),
       h("div", { class: "card form about" }, h("h3", { class: "card-h" }, t("settings.about")),
@@ -3090,6 +3091,79 @@
         h("div", { class: "kv" }, h("span", {}, t("settings.device")), h("code", {}, (S.device.label || "") + " · " + (S.device.id || "")))));
     screen({ back: S.settingsFrom || "#/chats", title: t("settings.title"), tab: "settings" }, body);
     paintPushState(pushState, pushOn);
+  }
+
+  // ------------------------------------------------------------------ MCP servers (Settings)
+
+  function mcpCard() {
+    const list = h("div", { class: "mcp-list" }, h("p", { class: "hint" }, h("span", { class: "spinner" })));
+    let paint;
+    const run = async (body) => { try { const j = await api("/api/mcp", body); paint(j.servers); } catch (e) { fail(e); } };
+    const row = (sv) => h("div", { class: "mcp-row" + (sv.enabled ? "" : " off") },
+      h("div", { class: "mcp-main" },
+        h("b", {}, sv.label || sv.name),
+        h("code", { class: "mcp-cmd" }, sv.kind === "url" ? sv.url : sv.command),
+        sv.error ? h("span", { class: "mcp-err" }, icon("alert"), h("span", {}, sv.error))
+          : h("span", { class: "tag" + (sv.tools.length ? " good" : "") }, t("mcp.tools", { n: sv.tools.length })),
+        sv.tools.length ? h("details", { class: "mcp-tools" }, h("summary", {}, t("mcp.showtools")), h("p", { class: "muted" }, sv.tools.join(", "))) : null),
+      sv.source === "settings" ? h("div", { class: "mcp-actions" },
+        h("label", { class: "toggle-row" }, h("span", {}, t("mcp.chat")), h("span", { class: "switch" },
+          h("input", { type: "checkbox", checked: sv.chat, onchange: (e) => run({ action: "update", name: sv.name, chat: e.target.checked }) }), h("span", { class: "knob" }))),
+        h("div", { class: "qcard-actions" },
+          h("button", { class: "btn ghost", type: "button", onclick: () => run({ action: "test", name: sv.name }) }, icon("refresh"), t("mcp.test")),
+          h("button", { class: "btn ghost", type: "button", onclick: async () => {
+            if (await confirmSheet(t("mcp.remove.title", { name: sv.label || sv.name }), t("mcp.remove.body"), t("mcp.remove"))) run({ action: "remove", name: sv.name });
+          } }, icon("trash"), t("mcp.remove"))))
+        : h("p", { class: "hint" }, t("mcp.fromconfig")));
+    paint = (servers) => list.replaceChildren(...(servers.length ? servers.map(row) : [h("p", { class: "hint" }, t("mcp.none"))]));
+    api("/api/mcp").then((j) => paint(j.servers)).catch(() => paint([]));
+    return h("div", { class: "card form" }, h("h3", { class: "card-h" }, icon("layers"), t("mcp.title")),
+      h("p", { class: "hint" }, t("mcp.body")), list,
+      h("button", { class: "btn ghost", type: "button", onclick: () => mcpAddSheet(paint) }, icon("plus"), t("mcp.add")));
+  }
+
+  function mcpAddSheet(paint) {
+    let mode = "json", sh = null;
+    const seg = h("div", { class: "seg three" }, ["json", "command", "url"].map((m) => h("button", { type: "button", class: m === mode ? "on" : "",
+      onclick: (e) => { mode = m; $$("button", seg).forEach((b) => b.classList.toggle("on", b === e.currentTarget)); show(); } }, t("mcp.mode." + m))));
+    const name = h("input", { class: "input", maxlength: "16", placeholder: t("mcp.name.ph"), autocomplete: "off" });
+    const json = h("textarea", { class: "input mono", rows: "8", spellcheck: "false",
+      placeholder: '{\n  "mcpServers": {\n    "filesystem": {\n      "command": "npx",\n      "args": ["-y", "@modelcontextprotocol/server-filesystem", "C:\\\\Users\\\\you\\\\Documents"]\n    }\n  }\n}' });
+    const command = h("input", { class: "input mono", autocomplete: "off", spellcheck: "false",
+      placeholder: "npx -y @modelcontextprotocol/server-filesystem C:\\Users\\you\\Documents" });
+    const env = h("textarea", { class: "input mono", rows: "3", spellcheck: "false", placeholder: "API_KEY=..." });
+    const url = h("input", { class: "input mono", type: "url", placeholder: "https://example.com/mcp", autocomplete: "off" });
+    const token = h("input", { class: "input", type: "password", autocomplete: "off", placeholder: t("mcp.token.ph") });
+    const chat = h("input", { type: "checkbox", checked: true });
+    const status = h("p", { class: "hint mcp-status", role: "status" });
+    const fields = {
+      json: [field(t("mcp.json"), json), h("p", { class: "hint" }, t("mcp.json.hint"))],
+      command: [field(t("mcp.name"), name), field(t("mcp.command"), command), field(t("mcp.env"), env), h("p", { class: "hint" }, t("mcp.env.hint"))],
+      url: [field(t("mcp.name"), name), field(t("mcp.url"), url), field(t("mcp.token"), token)],
+    };
+    const box = h("div", { class: "mcp-fields" });
+    const show = () => { box.replaceChildren(...fields[mode]); status.textContent = ""; };
+    const go = h("button", { class: "btn primary", type: "button" }, icon("check"), t("mcp.addgo"));
+    go.addEventListener("click", async () => {
+      go.disabled = true;
+      status.replaceChildren(h("span", { class: "spinner" }), " " + t("mcp.testing"));
+      try {
+        const body = mode === "json" ? { action: "import", json: json.value, chat: chat.checked }
+          : { action: "add", name: name.value, chat: chat.checked,
+              ...(mode === "command" ? { command: command.value, env: env.value } : { url: url.value, token: token.value }) };
+        const j = await api("/api/mcp", body);
+        env.value = ""; token.value = "";
+        paint(j.servers);
+        const bad = (j.results || []).filter((r) => !r.ok);
+        if (bad.length) { status.textContent = bad.map((r) => r.name + ": " + r.error).join("\n"); go.disabled = false; return; }
+        toast(t("mcp.added"));
+        sh.close();
+      } catch (e) { status.textContent = e.message || t("err.generic"); go.disabled = false; }
+    });
+    show();
+    sh = sheet(t("mcp.add"), [seg, box,
+      h("label", { class: "toggle-row" }, h("span", {}, t("mcp.chat.long")), h("span", { class: "switch" }, chat, h("span", { class: "knob" }))),
+      h("p", { class: "hint" }, t("mcp.where")), status, h("div", { class: "qcard-actions" }, go)]);
   }
 
   function backgroundCard() {

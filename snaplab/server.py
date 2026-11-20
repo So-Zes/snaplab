@@ -343,6 +343,10 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/phone":
             self.send_json(200, {"ok": True, **app.phone.summary(), "via_phone": self.via_phone})
             return
+        if path == "/api/mcp":
+            from . import mcp_admin
+            self.send_json(200, {"ok": True, "servers": mcp_admin.view(app)})
+            return
         if path == "/api/setup/presets":
             from .presets import presets
             self.send_json(200, {"ok": True, "presets": presets(app.cfg)})
@@ -630,6 +634,22 @@ class Handler(BaseHTTPRequestHandler):
             return {"avatar": avatars.save_upload(app.store, b.get("image"))}
         if not app.store.settings().get("onboarded"):
             raise ValueError("finish the first-run setup first")
+        if path == "/api/mcp":
+            from . import mcp_admin
+            action = str(b.get("action") or "")
+            if action == "add":
+                return mcp_admin.add(app, s("name"), command=b.get("command") or None, url=b.get("url") or None,
+                                     env=b.get("env") or "", token=b.get("token") or None, label=b.get("label") or None,
+                                     chat=b.get("chat") is not False)
+            if action == "import":
+                return mcp_admin.add_json(app, str(b.get("json") or ""), chat=b.get("chat") is not False)
+            if action == "remove":
+                return mcp_admin.remove(app, s("name"))
+            if action == "update":
+                return mcp_admin.update(app, s("name"), enabled=b.get("enabled"), chat=b.get("chat"))
+            if action == "test":
+                return mcp_admin.retest(app, s("name"))
+            raise ValueError("unknown action")
         if path == "/api/phone":
             if self.via_phone:
                 raise ValueError("set up phone access on the PC")
@@ -879,6 +899,7 @@ def serve_forever(app, host: str, port: int) -> None:
         app.housekeeper.stop.set()
         if app.translator:
             app.translator.stop()
+        app.close_mcp()
         try:
             app.store.path("server.json").unlink()
         except OSError:

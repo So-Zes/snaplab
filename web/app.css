@@ -1458,3 +1458,18 @@ button.ubar:focus-visible { outline: 2px solid var(--chart); outline-offset: 1px
 .phone-list { margin: 0; padding-left: 1.2em; display: grid; gap: 8px; line-height: 1.55; }
 .phone-url, .phone-link code { overflow-wrap: anywhere; }
 .phone-page .hint .spinner { vertical-align: -2px; margin-right: 6px; }
+
+/* MCP servers in Settings (2026-11-20) */
+.mcp-list { display: grid; gap: 12px; }
+.mcp-row { display: grid; gap: 8px; padding: 12px; border: 1px solid var(--line-2); border-radius: 14px; background: var(--surface); }
+.mcp-row.off { opacity: .6; }
+.mcp-main { display: grid; gap: 4px; min-width: 0; }
+.mcp-cmd { font-size: 13px; color: var(--ink-2); overflow-wrap: anywhere; }
+.mcp-err { display: flex; gap: 6px; align-items: flex-start; color: var(--bad); font-size: 14px; overflow-wrap: anywhere; }
+.mcp-err .ic { flex: none; width: 15px; height: 15px; margin-top: 2px; }
+.mcp-row .tag.good { background: var(--good-soft); color: var(--good); }
+.mcp-tools summary { cursor: pointer; font-size: 14px; color: var(--ink-2); }
+.mcp-tools p { margin: 6px 0 0; font-size: 13px; overflow-wrap: anywhere; }
+.mcp-fields { display: grid; gap: 10px; margin: 12px 0; }
+.mcp-status { white-space: pre-line; }
+.input.mono, textarea.mono { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: 14px; }

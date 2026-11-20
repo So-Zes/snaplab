@@ -52,8 +52,10 @@ flowchart LR
 - `models.py`, `llm.py`, `provider_protocol.py`: model registry, Chat Completions client and provider differences.
   The default model is shown as "Snapscribe 1".
 - `slots.py`: how many model calls may run at once (file locks).
-- `mcp_client.py`, `web_mcp.py`, `plugins.py`, `websearch.py`: external MCP servers as tools, the MCP server that
-  gives SnapCode its web and MCP tools, single-file tool plugins, and web search.
+- `mcp_client.py`, `web_mcp.py`, `plugins.py`, `websearch.py`: external MCP servers as tools (Streamable HTTP and
+  stdio), the MCP server that gives SnapCode its web and MCP tools, single-file tool plugins, and web search.
+- `mcp_admin.py`: MCP servers added in Settings (`data/mcp_servers.json`, secrets in the OS credential store);
+  each is tested before it is saved, and `app.reload_mcp()` applies changes without a restart.
 
 ### SnapCode (background work)
 - `sessions.py`: creating a session, running a turn, result cards, merging. A session works in its own git worktree

@@ -116,8 +116,10 @@ class App:
         from . import plugins as plugmod
         from .tools import builtin_tool_names
         self.plugin_tools = plugmod.load(cfg, builtin_tool_names(), log=self.log)
-        from . import mcp_client
-        self.plugin_tools.update(mcp_client.load(cfg, builtin_tool_names() | set(self.plugin_tools), log=self.log))
+        self.mcp_clients: dict = {}
+        self.mcp_errors: dict = {}
+        self._mcp_lock = threading.Lock()
+        self.plugin_tools.update(self._load_mcp())
         self.store.on_activity = lambda rec: self.bus.publish("activity.new", {"activity": rec})
         from .archive import Archive
         self.archive = Archive(self)
@@ -164,6 +166,42 @@ class App:
                 with open(self.log_path, "a", encoding="utf-8") as f:
                     f.write(f"{dt.datetime.now():%Y-%m-%d %H:%M:%S} {line}\n")
             except OSError:
+                pass
+
+    def _load_mcp(self, start_timeout_s: float | None = None, only: str | None = None) -> dict:
+        """MCP servers from config.json and from Settings (mcp_admin), connected and turned into tools."""
+        from . import mcp_admin, mcp_client
+        from .tools import builtin_tool_names
+        servers = mcp_admin.merged(self)
+        if start_timeout_s:
+            servers = {n: ({**c, "start_timeout_s": start_timeout_s} if only in (None, n) else c) for n, c in servers.items()}
+        reserved = builtin_tool_names() | {n for n, t in self.plugin_tools.items() if not getattr(t, "mcp", None)}
+        errors: dict = {}
+        tools = mcp_client.load({**self.cfg, "mcp_servers": servers}, reserved, log=self.log, opened=self.mcp_clients,
+                                secret=mcp_admin.secret, errors=errors)
+        self.mcp_errors = errors
+        return tools
+
+    def reload_mcp(self, start_timeout_s: float | None = None, only: str | None = None) -> None:
+        """Apply a change made in Settings without a restart: stop the old servers, connect the new list."""
+        with self._mcp_lock:
+            old = self.mcp_clients
+            self.mcp_clients = {}
+            for client in old.values():
+                try:
+                    client.close()
+                except Exception:  # noqa: BLE001
+                    pass
+            kept = {n: t for n, t in self.plugin_tools.items() if not getattr(t, "mcp", None)}
+            kept.update(self._load_mcp(start_timeout_s, only))
+            self.plugin_tools = kept          # swapped whole: readers never see a half-changed dict
+        self.bus.publish("mcp.updated", {})
+
+    def close_mcp(self) -> None:
+        for client in list(self.mcp_clients.values()):
+            try:
+                client.close()
+            except Exception:  # noqa: BLE001
                 pass
 
     def redact_log(self, text: str) -> str:

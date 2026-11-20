@@ -95,6 +95,9 @@ python snaplab.py check-secrets   # confirm the API key value is not inside any 
 
 ## Settings
 
+Tools: **Settings > Tools (MCP servers)** adds MCP servers (paste the JSON from a server's README, or a command
+or URL); bots and SnapCode (Pi and Codex) get their tools at once.
+
 Most people never need `config.json`. It is ignored by git and holds machine-specific values; everything has a
 default ([config.example.json](config.example.json) shows the common keys). Model providers, MCP servers,
 approvals and limits are described in [docs/extending.md](docs/extending.md) and [docs/architecture.md](docs/architecture.md).

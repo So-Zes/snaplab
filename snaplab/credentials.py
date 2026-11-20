@@ -87,3 +87,22 @@ def write_credential(target: str, value: str) -> None:
     advapi.CredWriteW.restype = wintypes.BOOL
     if not advapi.CredWriteW(ctypes.byref(credential), 0):
         raise ValueError("Windows Credential Manager could not save the key. Sign in normally and try again.")
+
+
+def read_credential(target: str) -> str | None:
+    """Any platform: Windows Credential Manager, macOS Keychain or Secret Service."""
+    return read_generic_credential(target) if os.name == "nt" else read_system_credential(target)
+
+
+def delete_credential(target: str) -> None:
+    """Remove a value SnapLab saved; a missing one is not an error."""
+    if os.name != "nt":
+        try:
+            _system_keyring().delete_password("SnapLab", target)
+        except Exception:
+            pass
+        return
+    advapi = _advapi32()
+    advapi.CredDeleteW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD]
+    advapi.CredDeleteW.restype = wintypes.BOOL
+    advapi.CredDeleteW(target, 1, 0)
