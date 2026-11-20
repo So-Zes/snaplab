@@ -2,6 +2,17 @@
 
 Newest first. Each entry: the date, what changed, and why.
 
+## 2026-11-20 Fixes from the first real installs
+
+- The installers now add Pillow and pypdf to SnapLab's Python environment. Why: without Pillow, photos went to
+  the model with their camera metadata (such as the place); without pypdf, bots could not read PDFs.
+- Linux and macOS: the server may bind its port again right after a restart (SO_REUSEADDR; Windows keeps it off
+  so no other program can take the port). Why: systemd restarts failed with "Address already in use".
+- install.sh installs python3-venv on a fresh Debian or Ubuntu and waits for the service before opening
+  SnapLab; the Linux workspace setup copies setup_worker.sh to /opt/snaplab so the snaplab account can read it.
+- The Windows installer asks for a restart whenever it turned WSL on.
+- Five tests that assumed Windows now check the platform, so the suite also runs on Linux.
+
 ## 2026-11-20 Mac version
 
 - `install.sh` on macOS: Homebrew Python and Git, the Keychain for keys, a LaunchAgent, and (when asked) the

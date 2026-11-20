@@ -854,7 +854,10 @@ def app_stopping(app) -> bool:
 
 class Server(ThreadingHTTPServer):
     daemon_threads = True
-    allow_reuse_address = False
+    # On Windows SO_REUSEADDR would let another program take the port, so it stays off there. On Linux and macOS it
+    # only lets a restart bind while the old connections wait out TIME_WAIT; without it systemd restarts failed with
+    # "Address already in use" for about a minute (found on Ubuntu, 2026-11-20).
+    allow_reuse_address = os.name != "nt"
 
 
 def make_server(app, host: str, port: int) -> Server:

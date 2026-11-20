@@ -380,8 +380,9 @@ namespace SnapLabSetup
             if (!File.Exists(o.VenvPython) && Shell.Run(python, "-m venv " + Shell.Quote(o.Venv), o.AppDir, 600000, null, null) != 0)
             { Mark("prepare", "failed"); throw new StepFailed(T.Get("err.venv")); }
             // Pillow turns photos upright and removes camera metadata (such as the place) before a model sees them.
-            if (Shell.Run(o.VenvPython, "-c \"import cryptography, PIL\"", o.AppDir, 120000, null, null) != 0
-                && Shell.Run(o.VenvPython, "-m pip install --disable-pip-version-check cryptography pillow", o.AppDir, 1800000, null, null) != 0)
+            // pypdf lets bots read the text of PDFs people send.
+            if (Shell.Run(o.VenvPython, "-c \"import cryptography, PIL, pypdf\"", o.AppDir, 120000, null, null) != 0
+                && Shell.Run(o.VenvPython, "-m pip install --disable-pip-version-check cryptography pillow pypdf", o.AppDir, 1800000, null, null) != 0)
             { Mark("prepare", "failed"); throw new StepFailed(T.Get("err.venv")); }
             Mark("prepare", "done");
 
