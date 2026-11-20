@@ -42,6 +42,9 @@ flowchart LR
   every member may choose `[SILENT]`.
 - `uploads.py`: photos and files the user sends to a chat: upload checks, what the model receives,
   `read_attachment`, and copies into a SnapCode workspace (`from_chat/`).
+- `context.py`: budgets for each call come from the model's window (`budgets`): the messages fit what the provider
+  check leaves after the reply and the tool list, notes keep their newest lines (`clip_newest`), and windows of 16K
+  or less get a shorter tool list (`tools.compact_schemas`).
 - `context.py`: what a bot receives on each call (instructions, memory, room state, history). "Start afresh"
   (`app.start_fresh`, the bot tool `start_fresh`) hides older messages without deleting them.
 - `prompts.py`: house rules. Everything about SnapCode is in `snapcode_rules()`.

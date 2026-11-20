@@ -3,6 +3,10 @@ import json
 import re
 
 FIELDS = ("purpose", "constraints", "decisions", "open_items", "identifiers", "approvals", "failures", "next_actions")
+# Rendered with what the bot needs next first: a context budget clips the end, so the long reference lists go last
+# (until 2026-11-21 the fixed order put next_actions at the end, where the clip removed it). Empty fields are left out.
+RENDER_ORDER = ("purpose", "next_actions", "open_items", "decisions", "constraints", "failures", "approvals", "identifiers")
+MAX_IDENTIFIERS = 40
 
 
 def parse(text):
@@ -28,11 +32,19 @@ def parse(text):
 
 def render(data):
     parts = ["Summary snapshot; approvals and work status must be checked against the current ledger."]
-    for key in FIELDS:
-        parts.append("## " + key + "\n" + ("\n".join("- " + x for x in data[key]) or "- Unknown / none recorded"))
+    for key in RENDER_ORDER:
+        if data.get(key):
+            parts.append("## " + key + "\n" + "\n".join("- " + x for x in data[key]))
     if data.get("legacy_text"):
         parts.append("## Unstructured legacy material (unverified)\n" + data["legacy_text"])
     return "\n\n".join(parts)
+
+
+def keep_identifiers(new_text, model_list, previous_text, body):
+    """Identifiers for the next summary, newest first and at most MAX_IDENTIFIERS: those in the new messages (found by
+    code), those the model kept, and earlier ones that the summary still mentions. Older ones stay in the archive."""
+    earlier = [i for i in identifiers(previous_text) if i in body]
+    return list(dict.fromkeys(identifiers(new_text) + list(model_list) + earlier))[:MAX_IDENTIFIERS]
 
 
 def identifiers(text):

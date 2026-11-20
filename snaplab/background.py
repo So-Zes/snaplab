@@ -225,10 +225,13 @@ class RoomSummaries:
         if data is None or estimate_tokens(text) > int(c["max_tokens"]) * 2:
             app.store.event('summary.failed', actor='runtime', where=room_id, data={'reason': 'invalid JSON' if data is None else 'summary too long', 'finished': r.finished})
             return prev
-        data["identifiers"] = sorted(set(data["identifiers"] + summary_schema.identifiers(prev + "\n" + "\n".join(lines))))
+        body = "\n".join(x for k in summary_schema.FIELDS if k not in ("identifiers", "approvals") for x in data[k])
+        data["identifiers"] = summary_schema.keep_identifiers("\n".join(lines), data["identifiers"], prev, body)
         # Coverage and approvals come from code, never from the model's claim about what it read.
-        data["approvals"] = [json.dumps({"id": q["id"], **app.ledger.approval_state(q)}, ensure_ascii=False)
-                             for q in app.store.questions() if q.get("room") == room_id and q.get("kind") == "approval"]
+        # Only approvals that are still open: answered and expired ones are in the ledger and the archive.
+        data["approvals"] = [json.dumps({"id": q["id"], **state}, ensure_ascii=False)
+                             for q in app.store.questions() if q.get("room") == room_id and q.get("kind") == "approval"
+                             for state in [app.ledger.approval_state(q)] if q.get("status") == "open" or state.get("can_accept")]
         text = summary_schema.render(data)
         d = self.folder(room_id)
         d.mkdir(parents=True, exist_ok=True)

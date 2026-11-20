@@ -27,14 +27,44 @@ DEFAULTS = {
     "summarize_tokens": 24000,   # above this the room summary is updated and old tool results are shortened
     "max_tokens": 32000,         # chats and rooms (~6 s for a new 32K context)
     "session_max_tokens": 64000, # background sessions (~12 s for a new 64K context; nobody waits on the screen)
-    "memory_tokens": 800,
-    "recent_tokens": 6000,
+    # None = sized from the model's window and the note limits (budgets()); a number in config.json wins.
+    "memory_tokens": None,       # the bot's own notes
+    "recent_tokens": None,       # the recent messages together
     "message_tokens": 900,       # one history message at most
     "history_messages": 40,
-    "brief_tokens": 1200,        # BRIEF.md of the projects the bot owns (all of them together)
-    "user_tokens": 400,          # data/shared/user.md: what every bot knows about the user
-    "summary_tokens": 1000,      # data/rooms/<room>/SUMMARY.md: what happened earlier in the room
+    "brief_tokens": None,        # BRIEF.md of the projects the bot owns (all of them together)
+    "user_tokens": None,         # data/shared/user.md: what every bot knows about the user
+    "summary_tokens": None,      # data/rooms/<room>/SUMMARY.md: what happened earlier in the room
 }
+
+
+def budgets(cfg: dict, limit: int, *, memory_chars: int = 4000, user_chars: int = 1400, tool_tokens: int = 0,
+            output_tokens: int = 8192) -> dict:
+    """Token budgets for one call to a model with this context window.
+
+    The messages may use what the provider check (provider_protocol.prepare) leaves after the reply, its margin and
+    the tool list, and at most 60% of the window and config "max_tokens". Each section then gets a share of that,
+    but never more than its full content can need: a full 4,000-character Japanese note is about 3,100 tokens, so
+    large windows show whole notes and 16K-32K windows keep room for the conversation. A number in config.json
+    "context" wins. (Until 2026-11-21 the notes had fixed budgets that showed a quarter of a Japanese note.)"""
+    out = dict(cfg)
+    limit = int(limit)
+    room = limit - min(int(output_tokens), max(1, limit // 4)) - min(1024, limit // 10) - int(tool_tokens)
+    cap = max(512, min(int(cfg["max_tokens"]), int(limit * .6), room))
+    out["max_tokens"] = cap
+    out["target_tokens"] = min(int(cfg["target_tokens"]), cap)
+    auto = {"memory_tokens": min(int(memory_chars / 1.3) + 20, int(cap * .12)),
+            "user_tokens": min(int(user_chars / 1.3) + 20, int(cap * .05)),
+            "summary_tokens": min(2000, int(cap * .06)),
+            "brief_tokens": min(1200, int(cap * .05)),
+            "recent_tokens": min(6000, int(cap * .3))}
+    for k, v in auto.items():
+        if cfg.get(k) is None:
+            out[k] = max(64, v)
+    # Shorten old tool results and update the room summary before the provider would refuse the call.
+    out["summarize_tokens"] = max(1024, min(int(cfg["summarize_tokens"]), int(max(room, 1280) * .8)))
+    out["reserve_tokens"] = min(2000, max(300, int(cap * .15)))    # the state block added after the history
+    return out
 
 
 def later_than(ts, since: str) -> bool:
@@ -52,6 +82,28 @@ def estimate_tokens(text: str) -> int:
         return 0
     ascii_n = sum(1 for ch in text if ord(ch) < 128)
     return int(ascii_n / 4 + (len(text) - ascii_n) / 1.3) + 1
+
+
+def clip_newest(text: str, tokens: int, keep_head: int = 0) -> str:
+    """Notes grow at the end, so keep the newest lines (and the first keep_head lines) within the budget. The
+    lines left out become one marker line, so the bot knows they exist and that recall finds them."""
+    if estimate_tokens(text) <= tokens:
+        return text
+    lines = text.splitlines()
+    head, rest = lines[:keep_head], lines[keep_head:]
+    marker = "- ({n} older lines are not shown here; recall finds them)"
+    used = estimate_tokens("\n".join(head)) + estimate_tokens(marker) + 2
+    kept: list[str] = []
+    for line in reversed(rest):
+        cost = estimate_tokens(line) + 1
+        if used + cost > tokens and kept:
+            break
+        used += cost
+        kept.append(line)
+    kept.reverse()
+    hidden = len(rest) - len(kept)
+    out = "\n".join(head + ([marker.format(n=hidden)] if hidden else []) + kept)
+    return out if estimate_tokens(out) <= tokens else clip_tokens(out, tokens)
 
 
 def clip_tokens(text: str, tokens: int) -> str:
@@ -104,11 +156,13 @@ class ContextBuilder:
 
     def build(self, room: dict, bot: dict, lang: str) -> tuple[list[dict], dict]:
         st = self.app.store
-        cfg = dict(self.cfg)
         model = self.app.models.spec(bot.get("model"), "chat")
         limit = model["context_limit"]
-        cfg["max_tokens"] = min(int(cfg["max_tokens"]), max(512, int(limit * .6)))
-        cfg["target_tokens"] = min(int(cfg["target_tokens"]), cfg["max_tokens"])
+        mem_limit = int(self.app.cfg.get("memory_chars", 4000))
+        from .tools import schema_tokens
+        cfg = budgets(self.cfg, limit, memory_chars=mem_limit, user_chars=int(self.app.cfg.get("user_note_chars", 1400)),
+                      tool_tokens=schema_tokens(self.app, bot, limit),
+                      output_tokens=int((self.app.cfg.get("chat") or {}).get("max_tokens") or 8192))
         settings = st.settings()
         members = [b for b in (st.bot(i) for i in room.get("bots", [])) if b]
         memory = st.memory(bot["id"])
@@ -116,7 +170,6 @@ class ContextBuilder:
         fresh = room.get("fresh_start") or {}
         if fresh and smeta.get("since") != fresh.get("at"):
             summary, smeta = "", {}              # the summary is from before the chat was started afresh
-        mem_limit = int(self.app.cfg.get("memory_chars", 4000))
         chat_mcp = {n: t for n, t in (getattr(self.app, "plugin_tools", None) or {}).items() if "chat" in t.scope}
         sections = {
             "persona": (bot.get("system_prompt") or "").strip(),
@@ -127,15 +180,15 @@ class ContextBuilder:
             "room": prompts.room_block(lang=lang, call_user=bot.get("call_user") or settings.get("user_name", ""),
                                        bot=bot, room=room, members=members, model=model),
             "memory": ("# Your memory (" + f"{len(memory)}/{mem_limit} characters used" + ")\n"
-                       + clip_tokens(memory.strip(), cfg["memory_tokens"])) if memory.strip() else "",
+                       + clip_newest(memory.strip(), int(cfg["memory_tokens"]))) if memory.strip() else "",
             "user": ("# About the user (shared by all bots; the lead bot keeps it, the user can edit it)\n"
-                     + clip_tokens(st.user_note().strip(), int(cfg.get("user_tokens", 400)))) if st.user_note().strip() else "",
-            "briefs": self.briefs(bot, int(cfg.get("brief_tokens", 1200))),
+                     + clip_newest(st.user_note().strip(), int(cfg["user_tokens"]), keep_head=1)) if st.user_note().strip() else "",
+            "briefs": self.briefs(bot, int(cfg["brief_tokens"])),
             "fresh": ("# This chat was started afresh on " + str(fresh.get("at"))[:16].replace("T", " ") + "\n"
                       "The messages before that are no longer shown to you; they stay in SnapLab's record and recall "
                       "finds them. What still mattered then:\n" + (fresh.get("note") or "(nothing was kept)")) if fresh else "",
             "summary": ("# Earlier in this room (a summary SnapLab keeps; the messages after it follow)\n"
-                        + clip_tokens(summary.strip(), int(cfg.get("summary_tokens", 1000)))) if summary.strip() else "",
+                        + clip_tokens(summary.strip(), int(cfg["summary_tokens"]))) if summary.strip() else "",
         }
         system = "\n\n".join(v for v in sections.values() if v)
         names = {b["id"]: b["name"] for b in st.bots()}
@@ -176,7 +229,7 @@ class ContextBuilder:
                     hist.append({"role": "user", "content": f"[SnapLab note] {text}"})
             if record:
                 hist.append({"role": "user", "content": record, "record": True})
-        budget = min(int(cfg["recent_tokens"]), int(cfg["max_tokens"]) - estimate_tokens(system) - 2000)
+        budget = min(int(cfg["recent_tokens"]), int(cfg["max_tokens"]) - estimate_tokens(system) - int(cfg["reserve_tokens"]))
         total, kept = 0, []
         for h in reversed(hist):
             total += estimate_tokens(h["content"])
@@ -222,7 +275,8 @@ class ContextBuilder:
         f = self.factor.get(room["id"], 1.0)
         report["total_real"] = int(report["total"] * f)
         report["over_target"] = report["total_real"] > int(cfg["target_tokens"])
-        if report["total_real"] > int(cfg.get("summarize_tokens", 24000)) and getattr(self.app, "summaries", None):
+        report["compact_at"] = int(cfg["summarize_tokens"])
+        if report["total_real"] > int(cfg["summarize_tokens"]) and getattr(self.app, "summaries", None):
             if self.app.summaries.pending(room["id"]):
                 self.app.summaries.maybe_schedule(room["id"], force=True)
         report["target_tokens"] = int(cfg["target_tokens"])

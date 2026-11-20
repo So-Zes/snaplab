@@ -23,6 +23,7 @@ from . import mcp_client
 from .agent import run_loop, step_cap
 from .llm import ApiError, Cancelled, error_code
 from .store import new_id, now_iso
+from . import tools as tools_mod
 from .tools import Toolbox
 from .dialogue import DialogueLimits, stop_requested
 
@@ -581,7 +582,11 @@ class ChatManager:
         cfg = app.cfg
         try:
             ccfg = {**context_mod.DEFAULTS, **(cfg.get("context") or {})}
-            res = run_loop(app.models.get(bot.get("model"), "chat"), messages, box.schemas(), box, effort=bot.get("first_effort", cfg["api"]["chat_effort"]),
+            limit = int(app.models.spec(bot.get("model"), "chat").get("context_limit") or 131072)
+            schemas = box.schemas()
+            if limit <= tools_mod.SMALL_WINDOW:
+                schemas = tools_mod.compact_schemas(schemas)
+            res = run_loop(app.models.get(bot.get("model"), "chat"), messages, schemas, box, effort=bot.get("first_effort", cfg["api"]["chat_effort"]),
                            max_steps=step_cap(cfg["chat"].get("max_steps")), max_tokens=int(cfg["chat"]["max_tokens"]),
                            source="chat", caller_id=room_id, cancel=cancel.is_set, on_reasoning=on_reasoning, on_content=on_content,
                            on_step=on_step, kind="session" if scheduled else
@@ -589,7 +594,7 @@ class ChatManager:
                            on_wait=on_wait,
                            effort_after_tools=bot.get("after_tools_effort", cfg["api"].get("after_tools_effort")) or None, check_claims=True,
                            extra_claims=mcp_client.claim_rules(getattr(app, "plugin_tools", None)),
-                           compact_at=int(ccfg["summarize_tokens"]), final_check=language_check)
+                           compact_at=int(report.get("compact_at") or ccfg["summarize_tokens"]), final_check=language_check)
             if hasattr(self.context, "learn"):
                 self.context.learn(room_id, report.get("total", 0), res.first_input_tokens)
             for c_ in res.claims:

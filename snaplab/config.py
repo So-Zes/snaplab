@@ -85,8 +85,9 @@ DEFAULTS: dict = {
     # Measured with the Snapscribe model (2026-11-01): first token after ~2.6 s at 16K, ~6 s at 32K, ~12 s at 64K for a new
     # context; quality held to 64K. Chats and rooms stop at 32K; background sessions may use up to 64K.
     "context": {"target_tokens": 16000, "summarize_tokens": 24000, "max_tokens": 32000, "session_max_tokens": 64000,
-                "memory_tokens": 800, "recent_tokens": 6000,
-                "message_tokens": 900, "history_messages": 40, "brief_tokens": 1200, "user_tokens": 400},
+                # memory_tokens, user_tokens, summary_tokens, brief_tokens and recent_tokens are sized from each
+                # model's window when not set here (context.budgets).
+                "message_tokens": 900, "history_messages": 40},
     "context_builder": None,         # "module:Class" to replace the default context builder
     # Proposal cards: which bot actions wait for the user's approval ("always" | "after_web" | "never")
     "approvals": {},                 # Explicit overrides only; backend-aware defaults live in tools.py.

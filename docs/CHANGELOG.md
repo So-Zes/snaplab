@@ -2,6 +2,21 @@
 
 Newest first. Each entry: the date, what changed, and why.
 
+## 2026-11-21 Memory fixes
+
+- Notes keep their newest lines in the context. Why: notes grow at the end, but the fixed 800-token budget kept
+  the beginning, so a Japanese note showed about 1,000 of its 4,000 characters and the newest lines were the ones
+  cut (the user note: about 520 of 1,400). Lines that do not fit become one marker line that says recall finds them.
+- Budgets follow the model's window (`context.budgets`). With a 128K window a whole note, user note and summary fit;
+  with 16K-32K the messages leave room for the tool list, the reply and the provider's margin. Why: on 16K models a
+  full context plus the tool list was larger than the provider check allows, and old tool results were shortened
+  only past a fixed 24,000 tokens, which small windows never reach. Values set in config.json still win.
+- Windows of 16K or less get a shorter tool list: first sentences of the descriptions only (about a quarter
+  smaller), with the same names, parameters and required fields.
+- Room summaries show next_actions and open_items first and leave out empty fields; identifiers are capped at 40
+  (new ones first, earlier ones only while the summary still mentions them) and only open approvals are listed.
+  Why: both lists only grew, and the 1,000-token clip removed next_actions, the last field.
+
 ## 2026-11-20 Claude and ChatGPT apps, Google Gemini
 
 - Settings > Advanced settings (closed by default): other API providers, and "AI apps signed in on this PC":

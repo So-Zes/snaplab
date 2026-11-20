@@ -198,6 +198,48 @@ def inside(base: Path, rel: str) -> Path:
     return p
 
 
+
+SMALL_WINDOW = 16384      # at or below this context window the tool list is shortened (compact_schemas)
+
+
+def compact_schemas(schemas: list[dict]) -> list[dict]:
+    """The tool list for a small context window: each description keeps its first sentence and each parameter
+    description its first sentence (at most 100 characters). Names, types, enums and required fields stay, so the
+    tools work the same; the list shrinks by about a quarter (3,600 to 2,700 estimated tokens on 2026-11-21)."""
+    out = json.loads(json.dumps(schemas))
+
+    def first(text: str, cap: int) -> str:
+        m = re.match(r"(.+?[.!?\u3002])(\s|$)", text or "", re.S)
+        return (m.group(1) if m else (text or ""))[:cap]
+
+    def walk(node):
+        if isinstance(node, dict):
+            if "type" in node and isinstance(node.get("description"), str):
+                node["description"] = first(node["description"], 100)
+            for v in (node.get("properties") or {}).values() if isinstance(node.get("properties"), dict) else []:
+                walk(v)
+            if isinstance(node.get("items"), dict):
+                walk(node["items"])
+            for k in ("anyOf", "oneOf"):
+                for v in node.get(k) or []:
+                    walk(v)
+
+    for tool in out:
+        f = tool.get("function") or {}
+        f["description"] = first(f.get("description") or "", 300)
+        walk(f.get("parameters"))
+    return out
+
+
+def schema_tokens(app, bot: dict, limit: int) -> int:
+    """Estimated tokens of the tool list a chat bot gets (the context budget leaves room for it)."""
+    from .context import estimate_tokens
+    base = CHAT_TOOLS + (ORCHESTRATOR_TOOLS if bot.get("orchestrator") else [])
+    base = base + [p.schema() for p in (getattr(app, "plugin_tools", None) or {}).values() if "chat" in p.scope]
+    if limit <= SMALL_WINDOW:
+        base = compact_schemas(base)
+    return estimate_tokens(json.dumps(base, ensure_ascii=False))
+
 class Toolbox:
     """Runs tool calls for one bot turn (chat) or one session turn."""
 
