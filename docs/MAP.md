@@ -42,6 +42,10 @@ flowchart LR
   every member may choose `[SILENT]`.
 - `uploads.py`: photos and files the user sends to a chat: upload checks, what the model receives,
   `read_attachment`, and copies into a SnapCode workspace (`from_chat/`).
+- Memory lane 1 (`context.auto_recall`): before each reply the latest message is looked up in the archive, and at
+  most 3 trusted, clearly relevant records from earlier (what people said, notes, summaries; never web pages or
+  tool output) are put into the latest message with their record ids. No model call; `recall` is lane 2.
+  Settings: config.json "recall": {"auto": {"enabled", "max_items", "min_coverage", "min_dense"}}.
 - `context.py`: budgets for each call come from the model's window (`budgets`): the messages fit what the provider
   check leaves after the reply and the tool list, notes keep their newest lines (`clip_newest`), and windows of 16K
   or less get a shorter tool list (`tools.compact_schemas`).

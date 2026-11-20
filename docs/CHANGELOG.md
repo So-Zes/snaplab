@@ -2,6 +2,15 @@
 
 Newest first. Each entry: the date, what changed, and why.
 
+## 2026-11-21 Memory lane 1: automatic recall
+
+- Before each reply SnapLab looks up the latest message in the archive and puts up to 3 trusted, clearly relevant
+  records from earlier into the latest message (at most 8% of the call's budget), with their dates, places and
+  record ids. Web pages, tool output and worker events never come in this way, and nothing the bot already sees
+  (the visible history, this room's summary) is repeated. Why: the archive reached the model only when a bot called
+  recall, and small models often do not; research on long-term memory found that a short block of retrieved text at
+  the end of the prompt helps more than a longer history (LongMemEval, Lost in the Middle).
+
 ## 2026-11-21 Memory fixes
 
 - Notes keep their newest lines in the context. Why: notes grow at the end, but the fixed 800-token budget kept

@@ -38,6 +38,71 @@ DEFAULTS = {
 }
 
 
+AUTO_RECALL = {
+    "enabled": True,
+    "max_items": 3,
+    "min_coverage": 0.5,     # share of the message's words found in the record (lexical agreement)
+    "min_dense": 0.86,       # cosine of the best chunk when semantic search is on (multilingual-e5-small)
+}
+# Records the automatic lane may show: what the user and the bots said and kept. Web pages, tool output and worker
+# events never come in by themselves (they may carry instructions written by others); recall still finds them.
+AUTO_KINDS = ("message", "memory", "summary", "room", "doc")
+
+
+def auto_recall(app, room: dict, bot: dict, query: str, budget: int, visible_since: str | None) -> tuple[str, list]:
+    """Lane 1 of memory: before each reply, look in the archive for what the latest message is about and put at most a
+    few trusted, clearly relevant lines into the latest message. No model call. The bot can still call recall for
+    more (lane 2). Research basis: small models often do not call the tool on their own, and a short block of
+    retrieved text at the end of the prompt helps more than a long history (docs/MAP.md, memory)."""
+    cfg = {**AUTO_RECALL, **(((app.cfg.get("recall") or {}).get("auto")) or {})}
+    q = " ".join((query or "").split())[:400]
+    if not cfg["enabled"] or budget < 80 or len(q) < 4 or not getattr(app, "archive", None):
+        return "", []
+    from .archive import Scope, snippet, terms_of
+    try:
+        hits = app.archive.search(q, Scope.for_bot(app, bot), kinds=list(AUTO_KINDS), limit=12, mode="current")
+    except Exception:  # noqa: BLE001 - memory help is optional; the reply goes on without it
+        return "", []
+    try:
+        from .hybrid_index import match_terms
+        words = match_terms(q)
+    except ImportError:
+        words = terms_of(q)
+    lines, ids, used = [], [], estimate_tokens(AUTO_HEADER)
+    for h in hits:
+        meta = h.get("meta") or {}
+        if meta.get("untrusted") or meta.get("web_material") or meta.get("source_type") == "web_research":
+            continue
+        if h.get("room") == room.get("id") and (h.get("kind") == "summary" or (
+                visible_since and str(h.get("ts") or "") >= visible_since)):
+            continue                                   # already in front of the bot (history or summary)
+        coverage = h.get("coverage")
+        if coverage is None and len(words) >= 2:
+            low = (str(h.get("text") or "") + " " + str(h.get("title") or "")).lower()
+            coverage = sum(1 for w in words if w.lower() in low) / len(words)
+        dense = h.get("dense")
+        if not ((coverage or 0) >= float(cfg["min_coverage"]) or (dense is not None and dense >= float(cfg["min_dense"]))):
+            continue
+        who = meta.get("role") or h.get("kind")
+        when = str(h.get("ts") or "")[:10]
+        line = f"- [{when} · {app.archive.where(h)} · {who}] {snippet(h.get('text') or '', [w.lower() for w in words], 240)} (record {h['id']})"
+        cost = estimate_tokens(line) + 1
+        if used + cost > budget:
+            break
+        lines.append(line)
+        ids.append(h["id"])
+        used += cost
+        if len(lines) >= int(cfg["max_items"]):
+            break
+    if not lines:
+        return "", []
+    return AUTO_HEADER + "\n" + "\n".join(lines), ids
+
+
+AUTO_HEADER = ("# From earlier (SnapLab looked these up for the latest message; they may be outdated or beside the point. "
+               "Use them only if they help, and recall(record=...) shows a whole record)")
+
+
 def budgets(cfg: dict, limit: int, *, memory_chars: int = 4000, user_chars: int = 1400, tool_tokens: int = 0,
             output_tokens: int = 8192) -> dict:
     """Token budgets for one call to a model with this context window.
@@ -64,6 +129,7 @@ def budgets(cfg: dict, limit: int, *, memory_chars: int = 4000, user_chars: int 
     # Shorten old tool results and update the room summary before the provider would refuse the call.
     out["summarize_tokens"] = max(1024, min(int(cfg["summarize_tokens"]), int(max(room, 1280) * .8)))
     out["reserve_tokens"] = min(2000, max(300, int(cap * .15)))    # the state block added after the history
+    out["recall_tokens"] = min(3000, max(0, int(cap * .08)))        # lines found by auto_recall
     return out
 
 
@@ -229,7 +295,9 @@ class ContextBuilder:
                     hist.append({"role": "user", "content": f"[SnapLab note] {text}"})
             if record:
                 hist.append({"role": "user", "content": record, "record": True})
-        budget = min(int(cfg["recent_tokens"]), int(cfg["max_tokens"]) - estimate_tokens(system) - int(cfg["reserve_tokens"]))
+        recall_budget = int(cfg.get("recall_tokens") or 0)
+        budget = min(int(cfg["recent_tokens"]), int(cfg["max_tokens"]) - estimate_tokens(system) - int(cfg["reserve_tokens"])
+                     - recall_budget)
         total, kept = 0, []
         for h in reversed(hist):
             total += estimate_tokens(h["content"])
@@ -265,8 +333,15 @@ class ContextBuilder:
         if getattr(self.app, "ledger", None):
             state += ("\n# Program-owned current state (observations; worker reports do not prove completion)\n"
                       + json.dumps(self.app.ledger.concise(bot, limit=8), ensure_ascii=False))
-        merged[-1] = {**merged[-1], "content": state + "\n\n" + merged[-1]["content"]}
+        latest = next((m for m in reversed(recent) if m.get("role") == "user" and (m.get("text") or "").strip()), None)
+        found, found_ids = ("", [])
+        if latest and recall_budget:
+            since = min((str(m.get("ts") or "") for m in recent if m.get("ts")), default=None)
+            found, found_ids = auto_recall(self.app, room, bot, latest.get("text") or "", recall_budget, since)
+        merged[-1] = {**merged[-1], "content": state + "\n\n" + (found + "\n\n" if found else "") + merged[-1]["content"]}
         sections["state"] = state
+        if found:
+            sections["recall"] = found
         messages = [{"role": "system", "content": system}] + merged
         report = {k: estimate_tokens(v) for k, v in sections.items()}
         report["history"] = sum(estimate_tokens(m["content"]) for m in merged)
@@ -276,6 +351,7 @@ class ContextBuilder:
         report["total_real"] = int(report["total"] * f)
         report["over_target"] = report["total_real"] > int(cfg["target_tokens"])
         report["compact_at"] = int(cfg["summarize_tokens"])
+        report["recalled"] = found_ids
         if report["total_real"] > int(cfg["summarize_tokens"]) and getattr(self.app, "summaries", None):
             if self.app.summaries.pending(room["id"]):
                 self.app.summaries.maybe_schedule(room["id"], force=True)
