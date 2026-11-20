@@ -1,0 +1,66 @@
+# GitHub Actions: install and test on Windows, Linux and macOS runners.
+# To turn it on, copy this file to .github/workflows/ci.yml and push it with an account that has the "workflow"
+# permission (for the GitHub CLI: gh auth refresh -s workflow).
+name: install-and-test
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Unit and integration tests
+        run: |
+          python -m pip install --disable-pip-version-check cryptography
+          python -m unittest discover -s tests
+      - name: Build the installer
+        shell: powershell
+        run: powershell -ExecutionPolicy Bypass -File installer\build.ps1
+      - name: Install with the installer (no WSL on the runner)
+        shell: powershell
+        run: |
+          $p = Start-Process -FilePath installer\dist\SnapLab-Setup.exe -Wait -PassThru -ArgumentList @(
+            '--quiet','--no-elevate','--skip-wsl','--no-startup','--no-shortcut','--no-launch',
+            '--name','SnapLab-CI','--repo','https://github.com/${{ github.repository }}.git','--branch','${{ github.ref_name }}','--port','18500')
+          Get-Content "$HOME\.snaplab\install-SnapLab-CI.log" -Tail 40
+          if ($p.ExitCode -ne 0) { throw "installer exit $($p.ExitCode)" }
+          (Invoke-WebRequest http://127.0.0.1:18500/healthz -UseBasicParsing).Content
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SnapLab-Setup
+          path: installer/dist/SnapLab-Setup.exe
+
+  linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install with install.sh, including the SnapCode workspace
+        run: SNAPLAB_WORKER=yes SNAPLAB_NO_BROWSER=1 SNAPLAB_PORT=18500 sh install.sh
+      - name: SnapLab answers
+        run: |
+          curl -fsS http://127.0.0.1:18500/healthz
+          ssh -F /dev/null -i ~/.snaplab/linux-worker/identity -o IdentitiesOnly=yes \
+            -o UserKnownHostsFile=$HOME/.snaplab/linux-worker/known_hosts -o BatchMode=yes snaplab@127.0.0.1 \
+            'bwrap --ro-bind / / --unshare-user --unshare-pid --dev /dev --proc /proc true && echo sandbox-ok'
+
+  macos:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install with install.sh (no VM on the runner)
+        run: SNAPLAB_WORKER=no SNAPLAB_NO_BROWSER=1 SNAPLAB_PORT=18500 sh install.sh
+      - name: SnapLab answers
+        run: |
+          sleep 3
+          curl -fsS http://127.0.0.1:18500/healthz
+          launchctl print gui/$(id -u)/com.snaplab.app | head -5 || true
