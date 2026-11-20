@@ -97,7 +97,16 @@ flowchart LR
 ### Server and screens
 - `server.py`: HTTP and server-sent events (standard library only). `auth.py`: device pairing, and the Tailscale
   owner check when SnapLab is published in a tailnet. `access.py`: who may see which project.
-- `setup.py`: first-run provider setup (Snapscribe 1, OpenRouter, OpenCode or any OpenAI-compatible API).
+- `setup.py`: first-run provider setup (Snapscribe 1, OpenRouter, OpenCode, Google Gemini or any OpenAI-compatible
+  API), and Settings > Models: "Use for bots" (`set_default`, routing `chat`) and "Remove" (`remove_model`).
+- `cli_admin.py`: Settings > Advanced > AI apps signed in on this PC. Shows whether Claude Code and the Codex CLI
+  are installed and signed in (never the account), opens a PowerShell window with the official install or sign-in
+  command on Windows (the page shows the command on Linux and macOS; never from a phone), tests one short turn, and
+  adds the app as a model. `claude_cli.py` and `codex_cli.py` run a bot's whole turn in that program with its
+  built-in tools off; SnapLab's tools reach it through a loopback MCP endpoint (one per turn, random bearer token),
+  so approval cards and the archive work as for other bots (`agent.run_loop` hands such a turn to `run_agent`).
+  SnapLab never reads or stores these logins. Gemini is added with an API key, because Google does not allow
+  other apps to use the Gemini CLI sign-in.
 - `presets.py`: the provider presets the setup page offers, in one place. config.json ("presets") and the
   SNAPLAB_SNAPSCRIBE_URL / SNAPLAB_SNAPSCRIBE_MODEL environment variables override them.
 - `phone.py`: phone access for a local installation. Installs Tailscale (Windows), waits for sign-in, publishes

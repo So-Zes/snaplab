@@ -22,6 +22,10 @@ BASE = {
                    "context_limit": 32768, "vision": False, "fixed_model": False},
     "opencode": {"label": "OpenCode Zen / Go", "base_url": "https://opencode.ai/zen/v1", "model": "",
                  "context_limit": 32768, "vision": False, "fixed_model": False},
+    # Gemini through Google's OpenAI-compatible endpoint, with an AI Studio key (the Gemini CLI sign-in may not be
+    # used by other apps, see cli_admin.py).
+    "gemini": {"label": "Google Gemini (API key)", "base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
+               "model": "", "context_limit": 1048576, "vision": True, "fixed_model": False},
     "custom": {"label": "Other OpenAI-compatible API", "base_url": "", "model": "",
                "context_limit": 32768, "vision": False, "fixed_model": False},
 }

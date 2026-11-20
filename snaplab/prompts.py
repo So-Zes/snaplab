@@ -266,7 +266,12 @@ def identity_lines(bot: dict, model: dict | None) -> list[str]:
     the user and may or may not match the model that answers)."""
     lines = [f"- You are the bot \"{bot.get('name')}\". The user chose this name; it is not the name of a model."]
     if model:
-        how = f"from the provider \"{model.get('provider')}\""
+        if model.get("kind") == "claude_cli":
+            how = "run by the Claude Code CLI on this PC, which maps this name to its current version"
+        elif model.get("kind") == "codex_cli":
+            how = "run by the Codex CLI on this PC with the user's ChatGPT sign-in"
+        else:
+            how = f"from the provider \"{model.get('provider')}\""
         lines.append(f"- The model that writes your replies: {model.get('label')} (model id \"{model.get('model')}\", "
                      f"{how}).")
     return lines

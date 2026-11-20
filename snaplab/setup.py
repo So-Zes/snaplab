@@ -266,6 +266,8 @@ def discover(app, body):
         rows = []
         for m in (result.get("data") or [])[:2000]:
             mid = m.get("id")
+            if body.get("provider") == "gemini" and isinstance(mid, str) and mid.startswith("models/"):
+                mid = mid[len("models/"):]          # Gemini lists "models/<id>"; chat takes the bare id
             if not isinstance(mid, str) or not mid or len(mid) > 200 or key in mid:
                 continue
             protocol = opencode_protocol(mid, url) if body.get("provider") == "opencode" else "chat"

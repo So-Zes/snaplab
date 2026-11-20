@@ -3085,6 +3085,7 @@
       modelsCard(),
       mcpCard(),
       backgroundCard(),
+      advancedCard(),
       h("div", { class: "card form privacy" }, icon("shield"), h("p", {}, t("settings.privacy"))),
       h("div", { class: "card form about" }, h("h3", { class: "card-h" }, t("settings.about")),
         h("div", { class: "kv" }, h("span", {}, t("settings.version")), h("code", {}, "SnapLab " + S.version)),
@@ -3206,9 +3207,65 @@
           (m.default_for || []).filter((k) => k !== "default").map((k) => h("span", { class: "tag" }, t("settings.models.for." + k))),
           h("span", { class: "tag " + (m.key_set ? "good" : "bad") }, t(m.key_set ? "settings.models.key" : "settings.models.nokey"))),
         actions(m)))),
-      h("p", { class: "hint" }, t("settings.models.hint")),
+      h("p", { class: "hint" }, t("settings.models.hint")));
+  }
+
+  // ------------------------------------------------------------------ Advanced (Settings): other providers, AI apps
+
+  function copyButton(text) {
+    return h("button", { class: "btn ghost small", type: "button", onclick: async (e) => {
+      const code = e.currentTarget.previousElementSibling;
+      try { await navigator.clipboard.writeText(text); toast(t("common.copied")); }
+      catch (err) { const r = document.createRange(); r.selectNodeContents(code); const s = getSelection(); s.removeAllRanges(); s.addRange(r); }
+    } }, t("common.copy"));
+  }
+
+  function advancedCard() {
+    const list = h("div", { class: "cli-list" }, h("p", { class: "hint" }, h("span", { class: "spinner" })));
+    let paint, viaPhone = false;
+    const refresh = async (fresh) => { try { const j = await api("/api/cli" + (fresh ? "?fresh=1" : "")); viaPhone = j.via_phone; paint(j.apps); } catch (e) { fail(e); } };
+    const step = (a, which, command) => {
+      if (a.can_open && !viaPhone) return h("div", { class: "cli-step" }, h("button", { class: "btn ghost", type: "button", onclick: async () => {
+        try { await api("/api/cli", { action: "open", app: a.id, step: which }); toast(t("cli.opened")); } catch (e) { fail(e); }
+      } }, icon("terminal"), t("cli." + which)), h("p", { class: "hint" }, t("cli.window")));
+      return h("div", { class: "cli-step" }, h("p", { class: "hint" }, t(viaPhone ? "cli.onpc" : "cli.terminal")),
+        h("div", { class: "cli-cmd" }, h("code", {}, command), copyButton(command)));
+    };
+    const row = (a) => {
+      const state = !a.installed ? ["bad", t("cli.notinstalled")] : !a.signed_in ? ["warn", t("cli.signedout", { v: a.version || "?" })]
+        : ["good", t("cli.signedin", { plan: a.plan || "", v: a.version || "?" })];
+      const body = [];
+      if (!a.installed) body.push(step(a, "install", a.install));
+      else if (!a.signed_in) body.push(step(a, "signin", a.signin));
+      else {
+        const model = h("input", { class: "input mono", list: "cli-models-" + a.id, maxlength: "80", autocomplete: "off", spellcheck: "false",
+          placeholder: a.models.length ? a.models[0] : t("cli.model.default") });
+        const status = h("p", { class: "hint", role: "status" });
+        const add = h("button", { class: "btn primary", type: "button", onclick: async () => {
+          add.disabled = true; status.textContent = t("cli.testing");
+          try { const j = await api("/api/cli", { action: "add", app: a.id, model: model.value.trim() }); await load(); render(); toast(t("cli.added", { name: (j.models.find((m) => m.name === j.added) || {}).label || "" })); }
+          catch (e) { status.textContent = ""; add.disabled = false; fail(e); }
+        } }, icon("plus"), t("cli.add"));
+        body.push(field(t("cli.model"), model), h("datalist", { id: "cli-models-" + a.id }, a.models.map((m) => h("option", { value: m }))),
+          h("p", { class: "hint" }, t(a.models.length ? "cli.model.hint" : "cli.model.hint.free")), add, status);
+      }
+      if (a.added.length) body.push(h("p", { class: "hint" }, t("cli.inuse", { names: a.added.map((m) => m.label).join(", ") })));
+      return h("div", { class: "cli-row" }, h("div", { class: "cli-head" }, h("b", {}, a.label + " · " + a.program),
+        h("span", { class: "tag " + state[0] }, state[1])), ...body);
+    };
+    paint = (apps) => list.replaceChildren(...apps.map(row));
+    refresh(false);
+    return h("details", { class: "card form advanced" },
+      h("summary", { class: "card-h" }, icon("gear"), t("adv.title")),
+      h("p", { class: "hint" }, t("adv.body")),
+      h("h4", {}, t("adv.providers")),
       h("p", { class: "hint" }, t("providers.notice")),
-      h("a", { class: "btn", href: "/setup#add" }, t("providers.add")));
+      h("a", { class: "btn ghost", href: "/setup#add" }, icon("plus"), t("providers.add")),
+      h("h4", {}, t("cli.title")),
+      h("p", { class: "hint" }, t("cli.notice")),
+      list,
+      h("button", { class: "btn ghost", type: "button", onclick: () => refresh(true) }, icon("refresh"), t("cli.check")),
+      h("p", { class: "hint" }, t("cli.gemini")));
   }
 
   let installEvt = null;

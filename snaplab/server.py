@@ -347,6 +347,11 @@ class Handler(BaseHTTPRequestHandler):
             from . import mcp_admin
             self.send_json(200, {"ok": True, "servers": mcp_admin.view(app)})
             return
+        if path == "/api/cli":
+            from . import cli_admin
+            fresh = (parse_qs(u.query).get("fresh") or [""])[0] == "1"
+            self.send_json(200, {"ok": True, **cli_admin.view(app, fresh), "via_phone": self.via_phone})
+            return
         if path == "/api/setup/presets":
             from .presets import presets
             self.send_json(200, {"ok": True, "presets": presets(app.cfg)})
@@ -668,6 +673,16 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/providers":
             from .setup import configure
             return configure(app, b, add=True)
+        if path == "/api/cli":
+            from . import cli_admin
+            action = str(b.get("action") or "")
+            if action == "open":
+                if self.via_phone:
+                    raise ValueError("do this on the PC")
+                return cli_admin.open_window(app, s("app"), s("step"))
+            if action == "add":
+                return cli_admin.add(app, s("app"), s("model"))
+            raise ValueError("unknown action")
         if path == "/api/models":
             from .setup import remove_model, set_default
             action = str(b.get("action") or "")

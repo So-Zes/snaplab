@@ -159,6 +159,10 @@ def run_loop(llm, messages: list[dict], tools: list[dict] | None, execute, *, ef
     calling that tool, send it back once to do it or correct itself. compact_at: shorten older tool results
     when the conversation passes this many tokens (estimate). final_check(text) -> note or None: one more
     check of the final reply (used for the reply language); the note is sent back once."""
+    if getattr(llm, "agentic", False) is True:
+        # The model runs its own tool loop (Claude Code, Codex); SnapLab's tools reach it through a loopback MCP.
+        return llm.run_agent(messages, tools, execute, effort=effort, cancel=cancel, on_reasoning=on_reasoning,
+                             on_content=on_content, on_step=on_step, on_wait=on_wait, source=source)
     text_parts: list[str] = []
     tin = tout = calls = first_in = 0
     called: list[str] = []

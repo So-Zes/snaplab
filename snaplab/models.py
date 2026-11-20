@@ -30,6 +30,9 @@ from .presets import SNAPSCRIBE_LABEL
 from .slots import Slots
 
 KINDS = ("chat", "session", "codex", "background")
+CLAUDE_CLI = "claude_cli"         # provider kind: the bot's turn runs in Claude Code (snaplab/claude_cli.py)
+CODEX_CLI = "codex_cli"           # provider kind: the bot's turn runs in `codex exec` (snaplab/codex_cli.py)
+CLI_KINDS = (CLAUDE_CLI, CODEX_CLI)
 EFFORT_STYLES = ("chat_template_kwargs", "reasoning_effort", "none")
 
 
@@ -76,13 +79,16 @@ def check(cfg: dict) -> list[str]:
     """Problems in the providers/models/routing settings (empty list = fine)."""
     out = []
     for name, m in cfg["models"].items():
+        cli = (cfg["providers"].get(m.get("provider")) or {}).get("kind") in CLI_KINDS
         if m.get("provider") not in cfg["providers"]:
             out.append(f"model {name!r} uses an unknown provider {m.get('provider')!r}")
-        if not m.get("model"):
+        if not m.get("model") and not cli:            # a CLI may use its own default model
             out.append(f"model {name!r} has no model id")
         if m.get("effort_style", "none") not in EFFORT_STYLES:
             out.append(f"model {name!r}: effort_style must be one of {EFFORT_STYLES}")
     for name, p in cfg["providers"].items():
+        if p.get("kind") in CLI_KINDS:
+            continue                  # runs a program on this PC (Claude Code, Codex): no URL and no key variable
         if not str(p.get("base_url") or "").startswith(("http://", "https://")):
             out.append(f"provider {name!r} needs a base_url")
         if not p.get("api_key_env"):
@@ -141,6 +147,16 @@ class ModelRegistry:
         if self.override is not None:
             return self.override
         name = self.name_for(ref, kind)
+        pkind = self.cfg["providers"][self.cfg["models"][name]["provider"]].get("kind")
+        if name not in self._clients and pkind in CLI_KINDS:
+            from .claude_cli import ClaudeCLI, ToolBridge
+            from .codex_cli import CodexCLI
+            if getattr(self, "_tool_bridge", None) is None:
+                self._tool_bridge = ToolBridge()
+            sp = self.spec(name)
+            self._clients[name] = (ClaudeCLI if pkind == CLAUDE_CLI else CodexCLI)(
+                sp, self.cfg["providers"][sp["provider"]], self.cfg["data_dir"], self._tool_bridge,
+                usage=self.usage, redactor=self.redactor)
         if name not in self._clients:
             sp = self.spec(name)
             api_cfg = {"base_url": sp["base_url"], "model": sp["model"], "api_key_env": sp["api_key_env"],
@@ -152,17 +168,24 @@ class ModelRegistry:
                 (self.cfg.get("qwen_log") or {}).get("enabled", True))
         return self._clients[name]
 
+    def is_cli(self, ref: str | None = None, kind: str = "chat") -> bool:
+        return self.spec(ref, kind).get("kind") in CLI_KINDS
+
     def slots_for(self, ref: str | None = None, kind: str = "chat") -> Slots:
         return self._slots[self.spec(ref, kind)["provider"]]
 
     def key(self, ref: str | None = None, kind: str = "chat") -> str | None:
         if self.override is not None:
             return self.override.key() if hasattr(self.override, "key") else None
+        if self.is_cli(ref, kind):
+            return None
         return get_api_key(self.spec(ref, kind)["api_key_env"])
 
     def has_key(self, ref: str | None = None, kind: str = "chat") -> bool:
         if self.override is not None:
             return bool(self.override.has_key())
+        if self.is_cli(ref, kind):
+            return self.get(ref, kind).has_key()
         return bool(get_api_key(self.spec(ref, kind)["api_key_env"]))
 
     def has_any_key(self) -> bool:
@@ -194,7 +217,7 @@ class ModelRegistry:
                         "kind": self.cfg["providers"][sp["provider"]].get("kind"),
                         "base_url": sp["base_url"], "capabilities": sp["capabilities"],
                         "context_limit": sp["context_limit"], "key_set": self.has_key(name) if self.override is None else
-                        bool(get_api_key(sp["api_key_env"])),
+                        bool(get_api_key(sp["api_key_env"])), "cli": sp.get("kind") in CLI_KINDS,
                         "default_for": [k for k, v in self.cfg["routing"].items() if v == name]})
         out.sort(key=lambda m: 0 if m["default_for"] else 1)
         return out

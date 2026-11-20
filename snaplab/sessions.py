@@ -341,6 +341,9 @@ class SessionManager:
             bot = orch["id"] if orch else None
         selected_bot = self.app.store.bot(bot or project.get("bot")) or {}
         selected_model = self.app.models.name_for(model or selected_bot.get("model"), "session" if harness == "bot" else "codex")
+        if harness != "bot" and self.app.models.override is None and self.app.models.is_cli(selected_model):
+            # Code harnesses talk Chat Completions through the translator; a CLI bot's sessions use routing.
+            selected_model = self.app.models.name_for(None, "codex")
         # Work started from the Work tab also delivers to the responsible bot's chat.
         if not room:
             owner = bot or project.get("bot") or (self.app.store.orchestrator() or {}).get("id")

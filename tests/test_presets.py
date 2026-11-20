@@ -12,7 +12,7 @@ class PresetTest(unittest.TestCase):
         self.assertEqual(p["snapscribe"]["label"], "Snapscribe 1")
         self.assertTrue(p["snapscribe"]["fixed_model"])
         self.assertTrue(p["snapscribe"]["base_url"].startswith("https://"))
-        self.assertEqual(set(p), {"snapscribe", "openrouter", "opencode", "custom"})
+        self.assertEqual(set(p), {"snapscribe", "openrouter", "opencode", "gemini", "custom"})
 
     def test_config_overrides_known_fields_only(self):
         cfg = {"presets": {"snapscribe": {"base_url": "https://new.example/v1", "secret": "x"}, "unknown": {"label": "y"}}}

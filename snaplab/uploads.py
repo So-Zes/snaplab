@@ -406,8 +406,9 @@ def can_see(app, bot: dict) -> bool:
         spec = app.models.spec(bot.get("model"), "chat")
     except Exception:  # noqa: BLE001
         return False
+    from .models import CLI_KINDS
     from .provider_protocol import capabilities
-    return bool(capabilities(spec).get("vision"))
+    return spec.get("kind") in CLI_KINDS or bool(capabilities(spec).get("vision"))
 
 
 # ---------------------------------------------------------------- the bot's view

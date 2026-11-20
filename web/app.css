@@ -890,9 +890,21 @@ b.plus { color: var(--good); font-weight: 750; } b.minus { color: var(--bad); fo
 .model-main .muted { font-size: 14px; overflow-wrap: anywhere; }
 .model-tags { display: flex; flex-wrap: wrap; gap: 6px; }
 .model-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.advanced > summary { cursor: pointer; list-style: none; }
+.advanced > summary::-webkit-details-marker { display: none; }
+.advanced > summary::after { content: "▾"; margin-left: auto; color: var(--muted); }
+.advanced[open] > summary::after { content: "▴"; }
+.advanced h4 { margin: 14px 0 0; font-size: 15px; }
+.cli-list { display: flex; flex-direction: column; gap: 10px; }
+.cli-row { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 14px; min-width: 0; }
+.cli-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.cli-step { display: flex; flex-direction: column; gap: 6px; }
+.cli-cmd { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.cli-cmd code { flex: 1; min-width: 0; overflow-x: auto; white-space: nowrap; padding: 8px 10px; border-radius: 10px; background: var(--chip, rgba(127,127,127,.12)); font-size: 13px; }
 .tag { font-size: 14px; padding: 2px 8px; border-radius: 999px; background: var(--surface-2); color: var(--muted); }
 .tag.good { color: var(--good); background: var(--good-soft); }
 .tag.bad { color: var(--bad); background: var(--bad-soft); }
+.tag.warn { color: var(--warn); background: var(--warn-soft); }
 
 /* connection band (F18): a dot in the header, a band when something the phone needs is down */
 .health-dot { width: 36px; height: 36px; border: 0; background: transparent; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; padding: 0; }

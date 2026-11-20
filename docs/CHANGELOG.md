@@ -2,6 +2,21 @@
 
 Newest first. Each entry: the date, what changed, and why.
 
+## 2026-11-20 Claude and ChatGPT apps, Google Gemini
+
+- Settings > Advanced settings (closed by default): other API providers, and "AI apps signed in on this PC":
+  Claude Code (Claude) and the Codex CLI (ChatGPT). SnapLab shows whether each is installed and signed in, opens the
+  official install or sign-in command in a window on Windows (Linux and macOS show the command), tests one short
+  turn, and adds the app as a model for bots (`cli_admin.py`, `claude_cli.py`, `codex_cli.py`, `/api/cli`). Why:
+  people with a Claude or ChatGPT plan can use it for bots without an API key; it stays optional because
+  Snapscribe 1 is the default.
+- The programs run unmodified with the user's own sign-in, which SnapLab never reads; their built-in tools are
+  off and only SnapLab's tools are offered. Status checks find installs made after SnapLab started (Windows
+  registry PATH, ~/.local/bin and the usual folders) and are cached for a minute. Codex features this version does
+  not know are left out of the --disable list.
+- Google Gemini (API key) on the setup page, through Google's OpenAI-compatible endpoint. Why: Google's terms do
+  not allow other apps to use the Gemini CLI sign-in, so a key is the allowed way.
+
 ## 2026-11-20 Models in Settings
 
 - Settings > Models: "Use for bots" makes a model the one bots use when they have no model of their own (routing
