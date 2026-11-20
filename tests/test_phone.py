@@ -105,6 +105,22 @@ class PhoneHTTPTest(unittest.TestCase):
 
 
 class PhoneUnitTest(unittest.TestCase):
+    def test_pairing_link_reaches_the_pc_page_unredacted(self):
+        app = PhoneHTTPTest("setUp")
+        app.setUp()
+        try:
+            app.app.phone.new_pairing()
+            with app.app.phone.lock:
+                app.app.phone.state["step"] = "pair"
+            cookie = app.pair()
+            status, _, body = app.request("/api/phone", headers={"Cookie": cookie})
+            data = json.loads(body)
+            self.assertEqual(status, 200)
+            self.assertEqual(len(data["pair_token"]), 43)
+            self.assertTrue(app.app.auth.pairing_state(data["pair_token"])[0] == "ok")
+        finally:
+            app.doCleanups()
+
     def test_qr_svg_is_a_square_svg(self):
         svg = phone.qr_svg("https://pc.example.ts.net:8445/pair/" + "a" * 43)
         self.assertTrue(svg.startswith("<svg"))

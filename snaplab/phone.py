@@ -127,7 +127,9 @@ class Phone:
                "dns_name": ts["dns_name"], "url": self.url() if self.enabled else None, **st,
                "devices": len(self.app.auth.devices())}
         if st["step"] == "pair" and self._pair:
-            out.update(pair_url=self._pair["url"], qr=self._pair["qr"], pair_expires=self._pair["expires"])
+            # The token goes on its own: JSON responses hide every "/pair/<token>" (redact_log), and the PC's page
+            # puts the link back together for the user to read.
+            out.update(pair_token=self._pair["token"], qr=self._pair["qr"], pair_expires=self._pair["expires"])
         return out
 
     # ------------------------------------------------------------ the setup worker
@@ -296,7 +298,8 @@ class Phone:
     def new_pairing(self) -> dict:
         token, rec = self.app.auth.new_pairing("Phone", PAIR_TTL_HOURS)
         url = f"{self.url()}/pair/{token}"
-        self._pair = {"url": url, "qr": qr_svg(url), "expires": rec["expires"], "until": time.time() + PAIR_TTL_HOURS * 3600 - 30}
+        self._pair = {"url": url, "token": token, "qr": qr_svg(url), "expires": rec["expires"],
+                      "until": time.time() + PAIR_TTL_HOURS * 3600 - 30}
         return self._pair
 
     def refresh_pairing(self) -> dict:

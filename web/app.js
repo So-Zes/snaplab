@@ -877,7 +877,7 @@
             h("a", { href: "https://play.google.com/store/apps/details?id=com.tailscale.ipn", target: "_blank", rel: "noopener" }, "Google Play")),
           h("li", {}, t("phone.pair.scan"))),
         st.step === "pair" ? qr : null,
-        st.pair_url ? h("p", { class: "hint phone-link" }, t("phone.pair.link"), " ", h("code", {}, st.pair_url)) : null,
+        st.pair_token && st.url ? h("p", { class: "hint phone-link" }, t("phone.pair.link"), " ", h("code", {}, st.url + "/pair/" + st.pair_token)) : null,
         h("button", { class: "btn ghost", type: "button", onclick: () => phoneAction("pair") }, icon("refresh"), t("phone.pair.new"))]);
     } else if (st.step === "done") {
       append(card, [h("h3", { class: "card-h" }, icon("check"), t("phone.done")), h("p", { class: "hint" }, t("phone.done.body")),
