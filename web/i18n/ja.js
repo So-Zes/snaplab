@@ -973,7 +973,7 @@ window.SNAPLAB_I18N.ja = {
   "phone.download": "Tailscale をダウンロード",
   "phone.err.install_failed": "Tailscale を入れられませんでした。tailscale.com/download から入れてから、もう一度試してください。",
   "phone.err.install_denied": "Windows で Tailscale を入れる許可が出ませんでした。もう一度試して「はい」を選んでください。",
-  "phone.err.install_manually": "tailscale.com/download からこのコンピューターに Tailscale を入れて、もう一度試してください。",
+  "phone.err.install_manually": "この PC に Tailscale を入れてから、もう一度試してください（tailscale.com/download。Linux なら curl -fsSL https://tailscale.com/install.sh | sh）。",
   "phone.err.signin_timeout": "サインインに時間がかかりすぎました。もう一度試してください。",
   "phone.err.https_timeout": "時間内に HTTPS が許可されませんでした。もう一度試してください。",
   "phone.err.port_taken": "この PC の Tailscale の HTTPS のポートを、ほかのプログラムが使っています。設定ファイルの tailscale_https_port を変えてから、もう一度試してください。",
@@ -1008,4 +1008,5 @@ window.SNAPLAB_I18N.ja = {
   "mcp.token": "トークン（任意）",
   "mcp.token.ph": "Authorization: Bearer として送ります",
   "mcp.where": "コマンドはこの PC の上で、あなたの権限で動きます。信頼できるサーバーだけを追加してください。",
+  "phone.err.operator": "Linux では、一度だけ自分のアカウントに Tailscale の操作を許可します。端末で sudo tailscale set --operator=$USER を実行してから、もう一度試してください。",
 };

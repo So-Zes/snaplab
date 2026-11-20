@@ -246,9 +246,11 @@ def ssh_command(cfg, local_port, remote_port):
     bootstrap = "import base64,zlib;exec(zlib.decompress(base64.b64decode('" + code + "')))"
     if cfg.get('wsl'):
         bootstrap = "import os;os.environ['SNAPLAB_WSL']='1';" + bootstrap
+    # The WSL worker and a worker on this Linux PC have their own key and pinned host key (setup wrote both).
     identity = (["-i", cfg['identity'], "-o", "IdentitiesOnly=yes", "-o",
-                 "UserKnownHostsFile=" + cfg['known_hosts'], "-o", "GlobalKnownHostsFile=NUL"]
-                if cfg.get('wsl') else [])
+                 "UserKnownHostsFile=" + cfg['known_hosts'], "-o",
+                 "GlobalKnownHostsFile=" + ("NUL" if os.name == "nt" else "/dev/null")]
+                if cfg.get('identity') and cfg.get('known_hosts') else [])
     return [cfg["ssh_exe"], "-F", "NUL" if os.name == "nt" else "/dev/null", "-T",
             *identity,
             "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes", "-o", "ForwardAgent=no",

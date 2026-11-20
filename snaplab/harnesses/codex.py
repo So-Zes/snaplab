@@ -394,6 +394,8 @@ class CodexHarness(Harness):
             return wsl_available(self.app)
         if backend(self.app) == "ssh":
             return available(self.app)
+        if backend(self.app) == "none":
+            return False, "the SnapCode workspace is not set up on this PC yet (see docs/linux.md)"
         if backend(self.app) != "local":
             return False, "unknown Codex backend"
         return self.local_available()

@@ -177,7 +177,9 @@ sequenceDiagram
 ## 6. Development
 
 The Windows installer is `installer/SnapLabSetup.cs` (build with `installer/build.ps1`); see
-[installer.md](installer.md) for its steps, options and how it is tested.
+[installer.md](installer.md) for its steps, options and how it is tested. Linux and macOS use `install.sh`; on Linux
+`tools/setup_linux_worker.sh` makes the SnapCode workspace a separate `snaplab` account reached over SSH from the PC
+only (codex.backend "ssh" with host 127.0.0.1), see [linux.md](linux.md).
 
 1. Change the code. Files use LF line endings.
 2. Run the tests: `python -m unittest discover -s tests` (no API calls), and the UI checks `node tests/<name>_ui.mjs`.

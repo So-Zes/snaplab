@@ -2,6 +2,15 @@
 
 Newest first. Each entry: the date, what changed, and why.
 
+## 2026-11-20 Linux version
+
+- `install.sh` sets up the SnapCode workspace on Linux (`tools/setup_linux_worker.sh`: a locked `snaplab` account,
+  Bubblewrap, Pi, Codex, Chrome, SSH from 127.0.0.1 only with SnapLab's own key), a systemd user service and an app
+  menu entry; on macOS a LaunchAgent. `tools/launch.py --foreground` runs the server for systemd and launchd.
+- Keys on a Linux PC without Secret Service go to `~/.snaplab/secrets.json` (0600); macOS still requires the
+  Keychain. Why: Linux servers and minimal desktops have no keyring, and setup failed there.
+- Phone access on Linux explains the two Tailscale commands (install, `--operator`) when they are needed.
+
 ## 2026-11-20 MCP servers from Settings
 
 - Settings > Tools (MCP servers): add a server by pasting its JSON (the Claude Desktop / Claude Code / Cursor

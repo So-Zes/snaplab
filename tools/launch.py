@@ -36,7 +36,23 @@ def choose_port(preferred):
     raise ValueError("No local port is free. Try again with --port and a different port number.")
 
 
-def launch(data, port=18445, open_browser=True):
+def windows():
+    return os.name == "nt"
+
+
+def local_worker():
+    """The codex settings for this PC: the WSL worker on Windows, the local SSH worker on Linux when it is ready."""
+    if windows():
+        return {"backend": "wsl"}
+    root = Path.home() / ".snaplab" / "linux-worker"
+    if (root / "ready.json").exists():
+        state = json.loads((root / "ready.json").read_text(encoding="utf-8"))
+        return {"backend": "ssh", "remote": {"host": "127.0.0.1", "user": "snaplab", "ssh_port": int(state.get("ssh_port", 22)),
+                                            "identity": str(root / "identity"), "known_hosts": str(root / "known_hosts")}}
+    return {"backend": "none"}
+
+
+def launch(data, port=18445, open_browser=True, foreground=False):
     from snaplab.auth import AuthStore
     data = Path(data).expanduser().resolve()
     data.mkdir(parents=True, exist_ok=True)
@@ -46,6 +62,10 @@ def launch(data, port=18445, open_browser=True):
         if not cfg.get("local_mode") or Path(cfg.get("data_dir", "")).resolve() != data:
             raise ValueError("This folder belongs to another configuration. Choose an empty folder with --data.")
         port = int(cfg["listen_port"])
+        worker = local_worker()
+        if not windows() and worker["backend"] == "ssh" and cfg.get("codex") != worker:
+            cfg["codex"] = worker              # the workspace was set up after the first start
+            settings.write_text(json.dumps(cfg, indent=2), encoding="utf-8")
     else:
         # Never reuse a legacy data directory or change its configuration.
         if any(data.iterdir()):
@@ -54,13 +74,20 @@ def launch(data, port=18445, open_browser=True):
         cfg = {"local_mode": True, "data_dir": str(data), "listen_port": port,
                "listen_host": "127.0.0.1", "manage_tailscale_serve": False,
                "require_tailscale_user": False, "slots": {"count": 2},
-               "codex": {"backend": "wsl"}}
+               "codex": local_worker()}
         with settings.open("x", encoding="utf-8") as f:
             json.dump(cfg, f, indent=2)
     expected = hashlib.sha256(str(data).encode()).hexdigest()
     state = probe(port)
     if state and state.get("instance") != expected:
         raise ValueError("Another application is using this installation's port. Close that application or choose a new --data folder and --port.")
+    if not state and foreground:
+        # A service manager (systemd, launchd) runs this: become the server instead of starting one in the background.
+        env = dict(os.environ, SNAPLAB_CONFIG=str(settings), SNAPLAB_DATA=str(data), SNAPLAB_PORT=str(port))
+        os.chdir(ROOT)
+        os.execve(sys.executable, [sys.executable, str(ROOT / "snaplab.py"), "serve"], env)
+    if state and foreground:
+        return {"url": f"http://127.0.0.1:{port}/", "port": port, "data": str(data)}
     if not state:
         env = dict(os.environ, SNAPLAB_CONFIG=str(settings), SNAPLAB_DATA=str(data), SNAPLAB_PORT=str(port))
         flags = 0x08000000 | 0x00000200 | 0x01000000 if os.name == "nt" else 0
@@ -92,11 +119,12 @@ def main():
     parser.add_argument("--data", default=os.environ.get("SNAPLAB_DATA") or str(Path.home() / ".snaplab" / "data"))
     parser.add_argument("--port", type=int, default=int(os.environ.get("SNAPLAB_PORT") or 18445))
     parser.add_argument("--no-browser", action="store_true", help="only make sure SnapLab is running (used at sign-in)")
+    parser.add_argument("--foreground", action="store_true", help="run the server in this process (for systemd and launchd)")
     args = parser.parse_args()
     if not 1024 <= args.port <= 65535:
         parser.error("Choose a port from 1024 to 65535.")
     try:
-        result = launch(args.data, args.port, open_browser=not args.no_browser)
+        result = launch(args.data, args.port, open_browser=not (args.no_browser or args.foreground), foreground=args.foreground)
         print(f"SnapLab is ready at http://127.0.0.1:{result['port']}. Run the same command to open it again.")
         return 0
     except (ValueError, OSError):

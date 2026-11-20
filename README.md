@@ -39,6 +39,17 @@ app in `~\.snaplab\app`. Details, options and how the installer is tested: [docs
 
 Prefer a script? [install.ps1](install.ps1) does the same without the window (`-SetupWorker` adds the workspace).
 
+## Install on Linux
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/So-Zes/snaplab/main/install.sh -o install.sh
+sh install.sh
+```
+
+Debian or Ubuntu with systemd. The script installs what is missing, asks whether to set up the SnapCode workspace
+(a separate `snaplab` account on the same PC, reached over SSH from the PC only), registers a systemd user service
+and an app menu entry, and opens SnapLab in the browser. Details: [docs/linux.md](docs/linux.md).
+
 ## Use it from your phone
 
 SnapLab listens only on `127.0.0.1`. Phone access goes through your own Tailscale network with `tailscale serve`

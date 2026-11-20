@@ -17,6 +17,8 @@ class PiHarness(Harness):
         if remote.backend(self.app) == 'wsl':
             from . import wsl
             return wsl.available(self.app)
+        if remote.backend(self.app) == 'none':
+            return False, 'the SnapCode workspace is not set up on this PC yet (see docs/linux.md)'
         if remote.backend(self.app) != 'ssh':
             return False, 'Pi requires a remote Linux worker'
         return remote.available(self.app)

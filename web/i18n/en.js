@@ -976,7 +976,7 @@ window.SNAPLAB_I18N.en = {
   "phone.download": "Download Tailscale",
   "phone.err.install_failed": "Tailscale could not be installed. Install it from tailscale.com/download, then try again.",
   "phone.err.install_denied": "Windows did not give permission to install Tailscale. Try again and choose Yes.",
-  "phone.err.install_manually": "Install Tailscale on this computer from tailscale.com/download, then try again.",
+  "phone.err.install_manually": "Install Tailscale on this computer (tailscale.com/download; on Linux: curl -fsSL https://tailscale.com/install.sh | sh), then try again.",
   "phone.err.signin_timeout": "Signing in took too long. Try again.",
   "phone.err.https_timeout": "HTTPS was not allowed in time. Try again.",
   "phone.err.port_taken": "Another program already uses this PC's Tailscale HTTPS port. Change tailscale_https_port in the settings file, then try again.",
@@ -1011,4 +1011,5 @@ window.SNAPLAB_I18N.en = {
   "mcp.token": "Token (optional)",
   "mcp.token.ph": "Sent as Authorization: Bearer",
   "mcp.where": "A command runs on this PC as you. Add only servers you trust.",
+  "phone.err.operator": "On Linux, let your account manage Tailscale once: run  sudo tailscale set --operator=$USER  in a terminal, then try again.",
 };

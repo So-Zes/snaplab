@@ -27,6 +27,7 @@ import urllib.request
 from pathlib import Path
 
 URL_RE = re.compile(r"https://login\.tailscale\.com/[^\s\"']+")
+DENIED_RE = re.compile(r"access denied|permission denied|--operator", re.I)
 PAIR_TTL_HOURS = 0.25
 NO_WINDOW = 0x08000000 if os.name == "nt" else 0
 MSI_URL = "https://pkgs.tailscale.com/stable/tailscale-setup-latest-amd64.msi"
@@ -232,6 +233,8 @@ class Phone:
             ts = self.tailscale(fresh=True)
             if ts["backend"] == "Running" and ts["dns_name"]:
                 return
+            if self.state.get("error"):
+                raise RuntimeError(self.state["error"])
             url = ts.get("auth_url") or self._login_url()
             if url:
                 self._set(auth_url=url)
@@ -247,6 +250,8 @@ class Phone:
 
             def read(proc=self.login_proc):
                 for raw in iter(proc.stdout.readline, b""):
+                    if DENIED_RE.search(raw.decode("utf-8", "replace")):
+                        self._set(error="operator")          # Linux: this account may not manage Tailscale yet
                     m = URL_RE.search(raw.decode("utf-8", "replace"))
                     if m:
                         found.append(m.group(0))
@@ -287,7 +292,10 @@ class Phone:
                 # It waits when HTTPS is not allowed on the tailnet yet; it printed the link to allow it.
                 proc.kill()
                 out, _ = proc.communicate()
-            m = URL_RE.search(out.decode("utf-8", "replace"))
+            text = out.decode("utf-8", "replace")
+            if DENIED_RE.search(text):
+                raise RuntimeError("operator")
+            m = URL_RE.search(text)
             if self.serve_state() == "ours":
                 return
             if m:

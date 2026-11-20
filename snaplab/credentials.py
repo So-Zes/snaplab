@@ -1,9 +1,19 @@
-"""Read a Windows generic credential without logging or persisting its contents."""
+"""API keys and other secrets in the OS credential store: Windows Credential Manager, macOS Keychain or Linux
+Secret Service. A Linux PC without a running Secret Service (a server, a minimal desktop) uses a file only its
+owner can read, ~/.snaplab/secrets.json (mode 0600), like other command-line tools keep their tokens.
+"""
 from __future__ import annotations
 
 import ctypes
+import json
 import os
+import sys
+from pathlib import Path
 from ctypes import wintypes
+
+
+def _windows() -> bool:
+    return os.name == "nt"
 
 
 class _Credential(ctypes.Structure):
@@ -61,20 +71,55 @@ def _system_keyring():
     return backend
 
 
+def _file() -> Path:
+    return Path(os.environ.get("SNAPLAB_SECRETS_FILE") or (Path.home() / ".snaplab" / "secrets.json"))
+
+
+def _file_read() -> dict:
+    try:
+        data = json.loads(_file().read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _file_write(data: dict) -> None:
+    path = _file()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".tmp")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        json.dump(data, f)
+    os.replace(tmp, path)
+    os.chmod(path, 0o600)
+
+
 def read_system_credential(target: str) -> str | None:
     try:
-        return _system_keyring().get_password("SnapLab", target)
+        value = _system_keyring().get_password("SnapLab", target)
+        if value:
+            return value
     except Exception:
-        return None
+        pass
+    value = _file_read().get(target)
+    return value if isinstance(value, str) and value else None
 
 
 def write_credential(target: str, value: str) -> None:
     """Save only to Windows Credential Manager, macOS Keychain or Secret Service."""
-    if os.name != "nt":
+    if not _windows():
         try:
             _system_keyring().set_password("SnapLab", target, value)
+            return
         except Exception:
-            raise ValueError("Unlock the OS credential store, then try again. On Linux, install and unlock a Secret Service keyring.") from None
+            if sys.platform == "darwin":
+                raise ValueError("Unlock the macOS Keychain, then try again.") from None
+        try:
+            data = _file_read()
+            data[target] = value
+            _file_write(data)
+        except OSError:
+            raise ValueError("SnapLab could not save the key in ~/.snaplab/secrets.json. Check that the folder is writable.") from None
         return
     raw = value.encode("utf-16-le")
     if len(raw) > 2560:
@@ -91,16 +136,19 @@ def write_credential(target: str, value: str) -> None:
 
 def read_credential(target: str) -> str | None:
     """Any platform: Windows Credential Manager, macOS Keychain or Secret Service."""
-    return read_generic_credential(target) if os.name == "nt" else read_system_credential(target)
+    return read_generic_credential(target) if _windows() else read_system_credential(target)
 
 
 def delete_credential(target: str) -> None:
     """Remove a value SnapLab saved; a missing one is not an error."""
-    if os.name != "nt":
+    if not _windows():
         try:
             _system_keyring().delete_password("SnapLab", target)
         except Exception:
             pass
+        data = _file_read()
+        if data.pop(target, None) is not None:
+            _file_write(data)
         return
     advapi = _advapi32()
     advapi.CredDeleteW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD]
