@@ -34,6 +34,9 @@ class AutoRecallTest(unittest.TestCase):
     def test_nothing_for_unrelated_or_empty_or_disabled(self):
         self.assertEqual(auto_recall(self.app, self.room, self.bot, "How are you today?", 800, None), ("", []))
         self.assertEqual(auto_recall(self.app, self.room, self.bot, "hi", 800, None), ("", []))
+        # Shares mostly function words with the trip record ("is", "for", "the", "three"): nothing comes in.
+        self.assertEqual(auto_recall(self.app, self.room, self.bot, "Is it for the three of us?", 800, None),
+                         ("", []))
         self.app.cfg["recall"] = {**(self.app.cfg.get("recall") or {}), "auto": {"enabled": False}}
         self.assertEqual(auto_recall(self.app, self.room, self.bot, "Which hotel for the Kyoto trip?", 800, None), ("", []))
 

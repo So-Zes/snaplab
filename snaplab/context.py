@@ -41,8 +41,10 @@ DEFAULTS = {
 AUTO_RECALL = {
     "enabled": True,
     "max_items": 3,
-    "min_coverage": 0.5,     # share of the message's words found in the record (lexical agreement)
-    "min_dense": 0.86,       # cosine of the best chunk when semantic search is on (multilingual-e5-small)
+    # Calibrated on 243 questions about a real archive (16k records) and 35 everyday requests: at these values no
+    # everyday request got a record, and 83% of the gold records the lane could show still came in (2026-11-21).
+    "min_coverage": 0.6,     # share of the message's content words found in the record (hybrid_index.content_terms)
+    "min_dense": 0.88,       # cosine of the best chunk when semantic search is on (multilingual-e5-small)
 }
 # Records the automatic lane may show: what the user and the bots said and kept. Web pages, tool output and worker
 # events never come in by themselves (they may carry instructions written by others); recall still finds them.
@@ -63,11 +65,8 @@ def auto_recall(app, room: dict, bot: dict, query: str, budget: int, visible_sin
         hits = app.archive.search(q, Scope.for_bot(app, bot), kinds=list(AUTO_KINDS), limit=12, mode="current")
     except Exception:  # noqa: BLE001 - memory help is optional; the reply goes on without it
         return "", []
-    try:
-        from .hybrid_index import match_terms
-        words = match_terms(q)
-    except ImportError:
-        words = terms_of(q)
+    from .hybrid_index import content_terms, covered, match_terms
+    words, content = match_terms(q) or terms_of(q), content_terms(q)
     lines, ids, used = [], [], estimate_tokens(AUTO_HEADER)
     for h in hits:
         meta = h.get("meta") or {}
@@ -76,10 +75,10 @@ def auto_recall(app, room: dict, bot: dict, query: str, budget: int, visible_sin
         if h.get("room") == room.get("id") and (h.get("kind") == "summary" or (
                 visible_since and str(h.get("ts") or "") >= visible_since)):
             continue                                   # already in front of the bot (history or summary)
-        coverage = h.get("coverage")
-        if coverage is None and len(words) >= 2:
-            low = (str(h.get("text") or "") + " " + str(h.get("title") or "")).lower()
-            coverage = sum(1 for w in words if w.lower() in low) / len(words)
+        coverage = h.get("content_coverage")             # the hybrid index's, over the best chunk and the title
+        if coverage is None and len(content) >= 2:         # another index: over the whole record
+            from .hybrid_index import norm
+            coverage = covered(content, norm(str(h.get("text") or "") + " " + str(h.get("title") or ""))) / len(content)
         dense = h.get("dense")
         if not ((coverage or 0) >= float(cfg["min_coverage"]) or (dense is not None and dense >= float(cfg["min_dense"]))):
             continue

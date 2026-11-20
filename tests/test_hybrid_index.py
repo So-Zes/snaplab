@@ -166,6 +166,20 @@ class HybridIndexTest(unittest.TestCase):
         idx.close()
 
 
+class ContentTermsTest(unittest.TestCase):
+    """The words memory lane 1 counts: what a message is about, not its function words or greetings."""
+
+    def test_function_words_and_greetings_do_not_count(self):
+        self.assertEqual(hx.content_terms("What is the capital of Australia?"), ["capital", "australia"])
+        self.assertEqual(hx.content_terms("ありがとう！"), [])
+        self.assertEqual(hx.content_terms("京都旅行で泊まったホテルはどこ？"), ["京都旅行", "泊まったホテル"])
+
+    def test_english_words_match_whole_words(self):
+        text = hx.norm("This hotel was booked for the Kyoto trips.")
+        self.assertEqual(hx.covered(["hotel", "book", "kyoto", "trip"], text), 4)
+        self.assertEqual(hx.covered(["cat", "his"], hx.norm("A category of this kind")), 0)
+
+
 class EmbedderDownloadTest(unittest.TestCase):
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp(prefix="snaplab-emb-"))

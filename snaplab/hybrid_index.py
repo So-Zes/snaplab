@@ -20,7 +20,8 @@ FtsIndex.search is still used while an older index is being upgraded. On top it 
    of the query's terms (space-separated words, or for a sentence without spaces the pieces between particles) found
    in the record's best chunk and title. A record found only by the word legs must contain at least one query term,
    unless the query is a sentence. Newer first on ties.
-Each hit also carries coverage (0..1), dense (cosine of its best chunk, or None) and matched (the number of terms).
+Each hit also carries coverage (0..1), dense (cosine of its best chunk, or None) and matched (the number of terms),
+and content_coverage: the same share over content_terms() only (0 with fewer than 2), which memory lane 1 uses.
 
 Upgrading an older index.sqlite3: the chunk tables are added and the old records are chunked by the background
 thread (progress in hybrid_meta, so a restart resumes); until that is finished, search() is FtsIndex.search.
@@ -142,6 +143,47 @@ def query_terms(q: str) -> tuple[list[str], bool]:
                 out.append(p)
                 sentence = True
     return out[:12], sentence and len(out) > 1
+
+
+# English words that say nothing about the topic. Japanese function words are left out by dropping kana-only pieces.
+STOPWORDS = frozenset("""a an the of in on at to for from by with and or but not no is are was were be been being am do
+does did done how what which who whom whose when where why can could should would will shall may might must i you he
+she it we they me him her us them my your his its our their this that these those there here so as if than then also
+very more most some any all just please tell give show let about into out up down over again one two""".split())
+TRAIL = ".,;:!?…'\"’”)"
+
+
+def content_terms(q: str) -> list[str]:
+    """The query's words that say what it is about: no English function words, no 1-2 letter words, no kana-only
+    pieces (greetings, particles), and for a sentence without spaces not the whole sentence. Used for the coverage
+    that decides whether memory lane 1 shows a record (context.auto_recall)."""
+    terms, sentence = query_terms(q)
+    if sentence:
+        terms = terms[1:]
+    out = []
+    for t in terms:
+        t = t.strip(TRAIL)
+        if not t or t in out:
+            continue
+        if t.isascii():
+            if len(t) < 3 or t in STOPWORDS:
+                continue
+        elif HIRA.match(t) or re.fullmatch(r"[\u3040-\u30ff]+", t) and len(t) <= 2:
+            continue
+        out.append(t)
+    return out
+
+
+def covered(terms: list[str], text: str) -> int:
+    """How many of the terms the (normalized) text contains; English words match whole words (with s/es/ed/ing)."""
+    n = 0
+    for t in terms:
+        if t.isascii() and t[:1].isalnum():
+            if re.search(r"(?<![a-z0-9])" + re.escape(t) + r"(?:s|es|ed|ing|'s)?(?![a-z0-9])", text):
+                n += 1
+        elif t in text:
+            n += 1
+    return n
 
 
 def rrf(rankings, k=RRF_K, weights=None):
@@ -547,6 +589,7 @@ class HybridIndex(FtsIndex):
                 self.log(f"semantic search skipped: {e!r}")
         cos = dict(dense_hits)
         terms, sentence = query_terms(query)
+        content = content_terms(query)
         with self.lock:
             lex, lex_best = self._records_from(self._lexical(query), where, args)
             den, den_best = self._records_from([c for c, _ in dense_hits], where, args)
@@ -562,7 +605,8 @@ class HybridIndex(FtsIndex):
                     norm(self._chunk_text(c)) for c in {lex_best.get(n), den_best.get(n)} - {None}]
                 text = " ".join(parts)
                 hit = sum(1 for t in terms if t in text)
-                cover[n] = (hit, hit / len(terms) if terms else 0.0)
+                cover[n] = (hit, hit / len(terms) if terms else 0.0,
+                            covered(content, text) / len(content) if len(content) >= 2 else 0.0)
                 if terms and not sentence and not hit and n not in den_best:
                     continue                                  # only a partial bigram match: not a hit
                 rows[n] = row
@@ -575,6 +619,7 @@ class HybridIndex(FtsIndex):
                 text = self.db.execute("SELECT text FROM docs WHERE rowid=?", (n,)).fetchone()
                 d = self._row(tuple(rows[n]) + ((text[0] if text else ""),))
                 d["matched"], d["coverage"] = cover[n][0], round(cover[n][1], 4)
+                d["content_coverage"] = round(cover[n][2], 4)        # 0 when the query has fewer than 2 content words
                 d["score"] = float(score[n])
                 d["dense"] = round(max(cos[den_best[n]], 0.0), 4) if n in den_best else None
                 out.append(d)

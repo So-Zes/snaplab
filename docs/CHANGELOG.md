@@ -2,6 +2,24 @@
 
 Newest first. Each entry: the date, what changed, and why.
 
+## 2026-11-21 Recall: hybrid index by default
+
+- `recall` (and memory lane 1) now searches with HybridIndex (`hybrid_index.py`): records are cut into ~350-token
+  chunks; a trigram word search, a CJK bigram word search (finds 1-2 character Japanese words) and a search by meaning
+  (multilingual-e5-small, int8 ONNX on the CPU, `embedder.py`) are fused by rank, with a small bonus for the share of
+  the query's words found. Why: measured on a copy of a real archive (16,154 records, 243 questions with hand-checked
+  answers), the right record was in the top 10 for 50% of keyword queries (was 45%) and 48% of natural questions
+  (was 26%), and a query took 24 ms at the median (was 96 ms). Larger models (ruri-v3) gained 3-5 points more but
+  need PyTorch; a cross-encoder reranker cost about a second per query; both stay out.
+- The meaning model (135 MB) is downloaded once from a pinned revision and checked by SHA-256. The installers add
+  numpy, onnxruntime and tokenizers as an optional step: without them, or without the download, recall searches by
+  words only. "recall": {"semantic": false} turns the meaning part off.
+- Chunks and vectors are made by a background thread that waits while a bot turn runs (about 30 minutes for 16,000
+  records on one core); until they are ready the old whole-record search answers, and a restart resumes the work.
+  The bot's record card shows how far it is.
+- Each hit carries `coverage`, `content_coverage` and `dense`. content_coverage counts only the words that say what
+  the query is about (no English function words, no kana-only pieces) and matches English as whole words.
+
 ## 2026-11-21 Memory lane 1: automatic recall
 
 - Before each reply SnapLab looks up the latest message in the archive and puts up to 3 trusted, clearly relevant
@@ -25,6 +43,7 @@ Newest first. Each entry: the date, what changed, and why.
 - Room summaries show next_actions and open_items first and leave out empty fields; identifiers are capped at 40
   (new ones first, earlier ones only while the summary still mentions them) and only open approvals are listed.
   Why: both lists only grew, and the 1,000-token clip removed next_actions, the last field.
+
 ## 2026-11-21 Browser panel
 
 - Home has a Browser button next to the work heading: it opens the browser of the running SnapCode session, or

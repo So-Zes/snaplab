@@ -108,7 +108,15 @@ flowchart LR
 
 ### Memory and records
 - `store.py`: all reads and writes of the data folder.
-- `archive.py`: the raw archive and full-text search (`recall`, SQLite trigrams; the index is replaceable).
+- `archive.py`: the raw archive and the search behind `recall` (the index is replaceable with "recall.index").
+- `hybrid_index.py`: the default index. Records are cut into ~350-token chunks; two word searches (SQLite FTS5
+  trigrams, and CJK character bigrams for 1-2 character Japanese words) and a search by meaning are fused by rank
+  (RRF), plus a small bonus for the share of the query's words found. Each hit carries `coverage` and `dense`, which
+  memory lane 1 uses. Chunks and vectors are made by a background thread that waits while a bot turn runs; until
+  they are ready the plain whole-record trigram search (FtsIndex) answers.
+- `embedder.py`: the meaning model (multilingual-e5-small, int8 ONNX, on the CPU), downloaded once from a pinned
+  revision and checked by SHA-256. Without numpy/onnxruntime/tokenizers, or without the download, recall searches
+  by words only. "recall": {"semantic": false} turns it off.
 - `memory.py`, `facts.py`, `ledger.py`, `temporal.py`, `summary_schema.py`: notes, facts with sources, approval and
   state records, time handling and room summaries.
 - `background.py`: room summaries and the nightly memory tidy (always behind chats).
