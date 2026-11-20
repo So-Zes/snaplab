@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Star Miner</title>
+<style>
+ body { font-family: sans-serif; margin: 0; background: #12182b; color: #eef; }
+ header { padding: 14px 20px; background: #1f2a48; font-size: 22px; }
+ main { padding: 20px; }
+ .card { background: #223055; padding: 18px; border-radius: 8px; max-width: 520px; margin-bottom: 16px; }
+ input, button { font-size: 18px; padding: 6px 12px; margin: 4px; }
+ #dev { display: none; }
+ canvas { background: #000; display: block; margin-top: 10px; }
+ #error { color: #ff8080; }
+</style></head>
+<body>
+<header>Star Miner</header>
+<main>
+ <div class="card" id="login">
+  <p>Developer login</p>
+  <label>Password <input id="password" type="password" autocomplete="off"></label>
+  <button id="enter">Enter</button>
+  <p id="error"></p>
+ </div>
+ <div class="card" id="play">
+  <p>Gold: <b id="gold">0</b> &nbsp; Level: <b id="level">1</b></p>
+  <canvas id="field" width="480" height="160"></canvas>
+ </div>
+ <div class="card" id="dev">
+  <p>Developer tools</p>
+  <button id="add-gold">Add 100 gold</button>
+  <button id="level-up">Level up</button>
+  <button id="spawn">Spawn enemy</button>
+  <p>Enemies: <b id="enemies">0</b></p>
+ </div>
+</main>
+<script>
+ // A small game with a password-protected developer screen, for browser and desktop checks.
+ const game = { gold: 0, level: 1, enemies: 0, dev: false, keys: 0, drags: 0, rightClicks: 0, wheel: 0, code: "" };
+ window.game = game;
+ const $ = (id) => document.getElementById(id);
+ function draw() {
+  const c = $("field").getContext("2d");
+  c.fillStyle = "#000"; c.fillRect(0, 0, 480, 160);
+  c.fillStyle = "#ffd84a"; c.font = "bold 28px sans-serif";
+  // This value is drawn only on the canvas, never in the page text: it can be read only by looking.
+  c.fillText(game.code ? "CODE " + game.code : "Press Enter to play", 20, 60);
+  for (let i = 0; i < game.enemies; i++) { c.fillStyle = "#f55"; c.fillRect(30 + i * 40, 100, 28, 28); }
+ }
+ function show() { $("gold").textContent = game.gold; $("level").textContent = game.level; $("enemies").textContent = game.enemies; draw(); }
+ $("enter").onclick = () => {
+  if ($("password").value === "miner-2026") {
+   game.dev = true; $("dev").style.display = "block"; $("login").style.display = "none";
+   localStorage.setItem("devUnlocked", "yes"); console.log("dev: unlocked");
+   game.code = String(4000 + Math.floor(Math.random() * 5000)) + "-" + "QWERTYUPASDFGHJKLZXCVBNM"[Math.floor(Math.random() * 24)];
+   show();
+  } else { $("error").textContent = "Wrong password"; console.warn("dev: wrong password"); }
+ };
+ $("password").addEventListener("keydown", (e) => { if (e.key === "Enter") $("enter").click(); });
+ $("add-gold").onclick = () => { game.gold += 100; console.log("dev: gold=" + game.gold); show(); };
+ $("level-up").onclick = () => { game.level += 1; console.log("dev: level=" + game.level); show(); };
+ $("spawn").onclick = () => { game.enemies += 1; fetch("enemy.json?n=" + game.enemies).catch(() => {}); console.log("dev: enemies=" + game.enemies); show(); };
+ addEventListener("keydown", (e) => { if (e.key === "ArrowRight") game.keys += 1; });
+ $("field").addEventListener("mousedown", () => { game.down = true; });
+ $("field").addEventListener("mouseup", () => { if (game.down) game.drags += 1; game.down = false; });
+ $("field").addEventListener("contextmenu", (e) => { e.preventDefault(); game.rightClicks += 1; });
+ $("field").addEventListener("wheel", (e) => { e.preventDefault(); game.wheel += Math.sign(e.deltaY); }, { passive: false });
+ show();
+</script>
+</body></html>

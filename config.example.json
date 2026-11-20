@@ -1,0 +1,43 @@
+{
+  "_about": "Optional advanced settings. The installer sets up a local installation and stores API keys in the OS credential store. Never put API keys in this file.",
+  "listen_host": "127.0.0.1",
+  "listen_port": 18445,
+  "tailscale_https_port": 8445,
+  "public_url": null,
+  "data_dir": "data",
+  "projects_dir": null,
+  "api": {
+    "base_url": "https://api.example.com/v1",
+    "model": "configure-model",
+    "api_key_env": "SNAPLAB_API_KEY",
+    "context_limit": 131072,
+    "key_expires": null,
+    "chat_effort": "low",
+    "work_effort": "medium"
+  },
+  "slots": {
+    "dir": null,
+    "count": 2
+  },
+  "proxy": {
+    "port": 18432
+  },
+  "search": {
+    "provider": "auto"
+  },
+  "push": {
+    "subject": "mailto:snaplab@example.com"
+  },
+  "harness_plugins": [],
+  "codex": {
+    "backend": "wsl",
+    "read_paths": []
+  },
+  "mcp_servers": {},
+  "bot_conversations": {
+    "max_consecutive": 6,
+    "max_hourly": 0,
+    "repeat_window": 20
+  },
+  "task_name": "SnapLab"
+}

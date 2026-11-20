@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>SnapLab · offline</title>
+<script defer src="/i18n.js"></script><script defer src="/offline.js"></script>
+<style>
+  :root { --bg:#FBF8F6; --ink:#17181C; --muted:#80838C; --brand:#E0182D; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0E0F13; --ink:#F2F2F5; --muted:#8B8E98; --brand:#FF4155; } }
+  html,body { margin:0; height:100%; background:var(--bg); color:var(--ink);
+    font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, "Hiragino Sans", "Noto Sans JP", sans-serif; }
+  main { min-height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:32px; text-align:center; box-sizing:border-box; }
+  img { width:120px; height:auto; opacity:.92; animation: bob 4s ease-in-out infinite; }
+  h1 { font-size:22px; margin:22px 0 6px; letter-spacing:-.01em; }
+  p { color:var(--muted); margin:4px 0; max-width:320px; }
+  .btn { display:inline-block; text-decoration:none; margin-top:22px; border-radius:14px; padding:13px 22px; font-weight:600; color:#fff; background:var(--brand); }
+  @keyframes bob { 0%,100% { transform: translateY(0) rotate(-1deg); } 50% { transform: translateY(-6px) rotate(1deg); } }
+</style>
+</head>
+<body>
+<main>
+  <img src="/logo.png" alt="">
+  <h1>Can't reach your PC</h1>
+  <p>The PC may be asleep, or Tailscale is not connected.</p>
+  <a class="btn" href="/">Try again</a>
+</main>
+</body>
+</html>

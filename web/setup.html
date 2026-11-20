@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Set up SnapLab</title><link rel="stylesheet" href="/app.css"><script defer src="/i18n.js"></script><script defer src="/setup.js"></script></head>
+<body class="gate-body"><main class="gate"><div class="gate-card">
+<img class="gate-logo" src="/logo.png" alt="SnapLab">
+<label for="setup-language" id="language-label">Language</label><select id="setup-language" class="input"><option value="en">English</option><option value="ja">日本語</option></select>
+<h1 id="setup-title">Connect your model</h1><p id="setup-help">Choose an OpenAI-compatible Chat Completions provider. One small request checks your key before it is saved in the OS credential store.</p>
+<form id="provider-form">
+<label for="provider" id="provider-label">Provider</label><select id="provider" class="input"><option value="snapscribe" selected>Snapscribe 1</option><option value="openrouter">OpenRouter</option><option value="opencode">OpenCode Zen / Go</option><option value="custom" id="provider-custom">Other OpenAI-compatible API</option></select>
+<p id="snapscribe-hint">Paste the API key you got on the Snapscribe website.</p>
+<label for="base-url" id="url-label">API base URL</label><input id="base-url" class="input" type="url" required placeholder="https://api.example.com/v1" autocomplete="off">
+<label for="model" id="model-label">Model name</label><input id="model" class="input" required placeholder="Model ID from your provider" autocomplete="off" maxlength="200">
+<label for="api-key" id="key-label">API key</label><input id="api-key" class="input" type="password" required autocomplete="off" spellcheck="false">
+<button id="edit-url" class="btn" type="button" hidden>Use a different address</button>
+<button id="load-models" class="btn" type="button"></button><select id="model-list" class="input" hidden></select>
+<details><summary id="compatibility-label">Compatibility settings</summary>
+<label id="context-label" for="context-limit"></label><input id="context-limit" class="input" type="number" min="2048" max="2000000" value="131072">
+<label><input id="supports-tools" type="checkbox" checked><span id="tools-label"></span></label>
+<label><input id="supports-vision" type="checkbox" checked><span id="vision-label"></span></label>
+<label><input id="stream-usage" type="checkbox" checked><span id="usage-label"></span></label>
+<label id="token-label" for="token-parameter"></label><select id="token-parameter" class="input"><option>max_tokens</option><option>max_completion_tokens</option><option value="none">none</option></select>
+</details><p id="provider-notice"></p>
+<p id="setup-privacy">Your key is sent only to the API URL above and stored by this PC's credential manager. Check the URL before continuing.</p>
+<button id="test-provider" class="btn primary wide" type="submit">Test and continue</button><p id="setup-status" role="status" aria-live="polite"></p>
+</form></div></main></body></html>

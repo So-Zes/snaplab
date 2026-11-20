@@ -1,0 +1,8 @@
+{
+  "baseline": "The archive and search implementation of an earlier version, frozen for comparisons and for the index-upgrade test.",
+  "adaptation": "Only the store import path changes; the baseline archive/search implementation is frozen.",
+  "sha256": {
+    "tools/baselines/round7_archive.py": "f8bf41285b2c5ef932036eeb3a5c6d89d77319b94ad05736209a44c3ff51316d",
+    "tests/fixtures/context_eval.json": "ebb7c45632b327ec634f2f38febf4c66b011a5eac2d8bd60ac80f8eb693bc6c9"
+  }
+}

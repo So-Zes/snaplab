@@ -1,0 +1,1085 @@
+{
+ "version": 1,
+ "date": "2026-11-01",
+ "how_to_use": {
+  "en": "Square PNGs with a transparent background. Show them in a circle (border-radius: 50%; overflow: hidden) on a light tint of the bot's colour; the shoulders are meant to be cut by the circle. lead_mark means the drawing itself has a lead sign (sail pin, badge or captain's cap).",
+  "ja": "背景が透明な正方形の PNG です。Bot の色を薄めた丸の上に、丸く切って（border-radius: 50%; overflow: hidden）表示します。肩は丸で切れる前提の構図です。lead_mark は、絵の中にリーダーの印（帆船のピン・バッジ・船長の帽子）があることを表します。"
+ },
+ "sets": {
+  "a": {
+   "en": "Hand-drawn colleagues",
+   "ja": "手描きの同僚",
+   "ru": "Нарисованные коллеги"
+  },
+  "b": {
+   "en": "Soft round teammates",
+   "ja": "まるい仲間",
+   "ru": "Округлые персонажи"
+  },
+  "c": {
+   "en": "The sailing crew",
+   "ja": "帆船の乗組員",
+   "ru": "Экипаж парусника"
+  },
+  "d": {
+   "en": "Chibi anime",
+   "ja": "アニメ風のデフォルメ",
+   "ru": "Миниатюрные аниме-персонажи"
+  },
+  "e": {
+   "en": "Anime, grown-up proportions",
+   "ja": "アニメ風（大人の頭身）",
+   "ru": "Аниме-персонажи"
+  }
+ },
+ "avatars": [
+  {
+   "no": 1,
+   "id": "a1",
+   "set": "a",
+   "set_name": {
+    "en": "Hand-drawn colleagues",
+    "ja": "手描きの同僚"
+   },
+   "name": {
+    "en": "Cardigan",
+    "ja": "カーディガン",
+    "ru": "Кардиган"
+   },
+   "roles": {
+    "en": [
+     "Lead",
+     "Organizer"
+    ],
+    "ja": [
+     "リーダー",
+     "まとめ役"
+    ]
+   },
+   "vibe": "warm",
+   "lead_mark": true,
+   "suggested_color": "#2F6FED",
+   "files": {
+    "256": "a/a1-256.png",
+    "96": "a/a1-96.png"
+   }
+  },
+  {
+   "no": 2,
+   "id": "a2",
+   "set": "a",
+   "set_name": {
+    "en": "Hand-drawn colleagues",
+    "ja": "手描きの同僚"
+   },
+   "name": {
+    "en": "Round Glasses",
+    "ja": "丸めがね",
+    "ru": "Круглые очки"
+   },
+   "roles": {
+    "en": [
+     "Research",
+     "Analysis"
+    ],
+    "ja": [
+     "調べ物",
+     "分析"
+    ]
+   },
+   "vibe": "warm",
+   "lead_mark": false,
+   "suggested_color": "#12A37F",
+   "files": {
+    "256": "a/a2-256.png",
+    "96": "a/a2-96.png"
+   }
+  },
+  {
+   "no": 3,
+   "id": "a3",
+   "set": "a",
+   "set_name": {
+    "en": "Hand-drawn colleagues",
+    "ja": "手描きの同僚"
+   },
+   "name": {
+    "en": "Side Braid",
+    "ja": "三つ編み",
+    "ru": "Коса набок"
+   },
+   "roles": {
+    "en": [
+     "Writing",
+     "Ideas"
+    ],
+    "ja": [
+     "文章",
+     "アイデア"
+    ]
+   },
+   "vibe": "warm",
+   "lead_mark": false,
+   "suggested_color": "#8B5CF6",
+   "files": {
+    "256": "a/a3-256.png",
+    "96": "a/a3-96.png"
+   }
+  },
+  {
+   "no": 4,
+   "id": "a4",
+   "set": "a",
+   "set_name": {
+    "en": "Hand-drawn colleagues",
+    "ja": "手描きの同僚"
+   },
+   "name": {
+    "en": "Silver Beard",
+    "ja": "銀のひげ",
+    "ru": "Седая борода"
+   },
+   "roles": {
+    "en": [
+     "Review",
+     "Advice"
+    ],
+    "ja": [
+     "見直し",
+     "相談"
+    ]
+   },
+   "vibe": "warm",
+   "lead_mark": false,
+   "suggested_color": "#F59E0B",
+   "files": {
+    "256": "a/a4-256.png",
+    "96": "a/a4-96.png"
+   }
+  },
+  {
+   "no": 5,
+   "id": "a5",
+   "set": "a",
+   "set_name": {
+    "en": "Hand-drawn colleagues",
+    "ja": "手描きの同僚"
+   },
+   "name": {
+    "en": "Headphones",
+    "ja": "ヘッドホン",
+    "ru": "Наушники"
+   },
+   "roles": {
+    "en": [
+     "Comms",
+     "Support"
+    ],
+    "ja": [
+     "連絡",
+     "案内"
+    ]
+   },
+   "vibe": "warm",
+   "lead_mark": false,
+   "suggested_color": "#0EA5E9",
+   "files": {
+    "256": "a/a5-256.png",
+    "96": "a/a5-96.png"
+   }
+  },
+  {
+   "no": 6,
+   "id": "a6",
+   "set": "a",
+   "set_name": {
+    "en": "Hand-drawn colleagues",
+    "ja": "手描きの同僚"
+   },
+   "name": {
+    "en": "Grey Hoodie",
+    "ja": "パーカー",
+    "ru": "Серая толстовка"
+   },
+   "roles": {
+    "en": [
+     "Code",
+     "Tools"
+    ],
+    "ja": [
+     "コード",
+     "道具づくり"
+    ]
+   },
+   "vibe": "warm",
+   "lead_mark": false,
+   "suggested_color": "#EC4899",
+   "files": {
+    "256": "a/a6-256.png",
+    "96": "a/a6-96.png"
+   }
+  },
+  {
+   "no": 7,
+   "id": "b1",
+   "set": "b",
+   "set_name": {
+    "en": "Soft round teammates",
+    "ja": "まるい仲間"
+   },
+   "name": {
+    "en": "Silver Curls",
+    "ja": "銀の巻き毛",
+    "ru": "Седые кудри"
+   },
+   "roles": {
+    "en": [
+     "Lead",
+     "Organizer"
+    ],
+    "ja": [
+     "リーダー",
+     "まとめ役"
+    ]
+   },
+   "vibe": "friendly",
+   "lead_mark": true,
+   "suggested_color": "#2F6FED",
+   "files": {
+    "256": "b/b1-256.png",
+    "96": "b/b1-96.png"
+   }
+  },
+  {
+   "no": 8,
+   "id": "b2",
+   "set": "b",
+   "set_name": {
+    "en": "Soft round teammates",
+    "ja": "まるい仲間"
+   },
+   "name": {
+    "en": "Teal Sweater",
+    "ja": "セーター",
+    "ru": "Бирюзовый свитер"
+   },
+   "roles": {
+    "en": [
+     "Code"
+    ],
+    "ja": [
+     "コード"
+    ]
+   },
+   "vibe": "friendly",
+   "lead_mark": false,
+   "suggested_color": "#E5162B",
+   "files": {
+    "256": "b/b2-256.png",
+    "96": "b/b2-96.png"
+   }
+  },
+  {
+   "no": 9,
+   "id": "b3",
+   "set": "b",
+   "set_name": {
+    "en": "Soft round teammates",
+    "ja": "まるい仲間"
+   },
+   "name": {
+    "en": "Twin Buns",
+    "ja": "おだんご頭",
+    "ru": "Два пучка"
+   },
+   "roles": {
+    "en": [
+     "Research"
+    ],
+    "ja": [
+     "調べ物"
+    ]
+   },
+   "vibe": "friendly",
+   "lead_mark": false,
+   "suggested_color": "#12A37F",
+   "files": {
+    "256": "b/b3-256.png",
+    "96": "b/b3-96.png"
+   }
+  },
+  {
+   "no": 10,
+   "id": "b4",
+   "set": "b",
+   "set_name": {
+    "en": "Soft round teammates",
+    "ja": "まるい仲間"
+   },
+   "name": {
+    "en": "White Mustache",
+    "ja": "白いひげ",
+    "ru": "Белые усы"
+   },
+   "roles": {
+    "en": [
+     "Advisor",
+     "Review"
+    ],
+    "ja": [
+     "相談役",
+     "見直し"
+    ]
+   },
+   "vibe": "friendly",
+   "lead_mark": false,
+   "suggested_color": "#8B5CF6",
+   "files": {
+    "256": "b/b4-256.png",
+    "96": "b/b4-96.png"
+   }
+  },
+  {
+   "no": 11,
+   "id": "b5",
+   "set": "b",
+   "set_name": {
+    "en": "Soft round teammates",
+    "ja": "まるい仲間"
+   },
+   "name": {
+    "en": "Headband",
+    "ja": "カチューシャ",
+    "ru": "Повязка на голову"
+   },
+   "roles": {
+    "en": [
+     "Writing"
+    ],
+    "ja": [
+     "文章"
+    ]
+   },
+   "vibe": "friendly",
+   "lead_mark": false,
+   "suggested_color": "#F59E0B",
+   "files": {
+    "256": "b/b5-256.png",
+    "96": "b/b5-96.png"
+   }
+  },
+  {
+   "no": 12,
+   "id": "b6",
+   "set": "b",
+   "set_name": {
+    "en": "Soft round teammates",
+    "ja": "まるい仲間"
+   },
+   "name": {
+    "en": "Orange Knit",
+    "ja": "ニット",
+    "ru": "Оранжевый свитер"
+   },
+   "roles": {
+    "en": [
+     "Ops",
+     "Scheduled tasks"
+    ],
+    "ja": [
+     "段取り",
+     "定期タスク"
+    ]
+   },
+   "vibe": "friendly",
+   "lead_mark": false,
+   "suggested_color": "#0EA5E9",
+   "files": {
+    "256": "b/b6-256.png",
+    "96": "b/b6-96.png"
+   }
+  },
+  {
+   "no": 13,
+   "id": "c1",
+   "set": "c",
+   "set_name": {
+    "en": "The sailing crew",
+    "ja": "帆船の乗組員"
+   },
+   "name": {
+    "en": "Captain",
+    "ja": "船長",
+    "ru": "Капитан"
+   },
+   "roles": {
+    "en": [
+     "Lead",
+     "Organizer"
+    ],
+    "ja": [
+     "リーダー",
+     "まとめ役"
+    ]
+   },
+   "vibe": "crew",
+   "lead_mark": true,
+   "suggested_color": "#F59E0B",
+   "files": {
+    "256": "c/c1-256.png",
+    "96": "c/c1-96.png"
+   }
+  },
+  {
+   "no": 14,
+   "id": "c2",
+   "set": "c",
+   "set_name": {
+    "en": "The sailing crew",
+    "ja": "帆船の乗組員"
+   },
+   "name": {
+    "en": "Navigator",
+    "ja": "航海士",
+    "ru": "Штурман"
+   },
+   "roles": {
+    "en": [
+     "Research",
+     "Planning"
+    ],
+    "ja": [
+     "調べ物",
+     "計画"
+    ]
+   },
+   "vibe": "crew",
+   "lead_mark": false,
+   "suggested_color": "#E5162B",
+   "files": {
+    "256": "c/c2-256.png",
+    "96": "c/c2-96.png"
+   }
+  },
+  {
+   "no": 15,
+   "id": "c3",
+   "set": "c",
+   "set_name": {
+    "en": "The sailing crew",
+    "ja": "帆船の乗組員"
+   },
+   "name": {
+    "en": "Lookout",
+    "ja": "見張り",
+    "ru": "Вперёдсмотрящий"
+   },
+   "roles": {
+    "en": [
+     "Monitoring",
+     "Notifications"
+    ],
+    "ja": [
+     "見守り",
+     "通知"
+    ]
+   },
+   "vibe": "crew",
+   "lead_mark": false,
+   "suggested_color": "#12A37F",
+   "files": {
+    "256": "c/c3-256.png",
+    "96": "c/c3-96.png"
+   }
+  },
+  {
+   "no": 16,
+   "id": "c4",
+   "set": "c",
+   "set_name": {
+    "en": "The sailing crew",
+    "ja": "帆船の乗組員"
+   },
+   "name": {
+    "en": "Carpenter",
+    "ja": "船大工",
+    "ru": "Плотник"
+   },
+   "roles": {
+    "en": [
+     "Code",
+     "Building"
+    ],
+    "ja": [
+     "コード",
+     "作る"
+    ]
+   },
+   "vibe": "crew",
+   "lead_mark": false,
+   "suggested_color": "#8B5CF6",
+   "files": {
+    "256": "c/c4-256.png",
+    "96": "c/c4-96.png"
+   }
+  },
+  {
+   "no": 17,
+   "id": "c5",
+   "set": "c",
+   "set_name": {
+    "en": "The sailing crew",
+    "ja": "帆船の乗組員"
+   },
+   "name": {
+    "en": "Log Keeper",
+    "ja": "記録係",
+    "ru": "Летописец"
+   },
+   "roles": {
+    "en": [
+     "Writing",
+     "Memory"
+    ],
+    "ja": [
+     "文章",
+     "記憶"
+    ]
+   },
+   "vibe": "crew",
+   "lead_mark": false,
+   "suggested_color": "#2F6FED",
+   "files": {
+    "256": "c/c5-256.png",
+    "96": "c/c5-96.png"
+   }
+  },
+  {
+   "no": 18,
+   "id": "c6",
+   "set": "c",
+   "set_name": {
+    "en": "The sailing crew",
+    "ja": "帆船の乗組員"
+   },
+   "name": {
+    "en": "Signal Officer",
+    "ja": "通信士",
+    "ru": "Сигнальщик"
+   },
+   "roles": {
+    "en": [
+     "Comms",
+     "Connections"
+    ],
+    "ja": [
+     "連絡",
+     "つながり"
+    ]
+   },
+   "vibe": "crew",
+   "lead_mark": false,
+   "suggested_color": "#0EA5E9",
+   "files": {
+    "256": "c/c6-256.png",
+    "96": "c/c6-96.png"
+   }
+  },
+  {
+   "no": 19,
+   "id": "d1",
+   "set": "d",
+   "set_name": {
+    "en": "Chibi anime",
+    "ja": "アニメ風のデフォルメ"
+   },
+   "name": {
+    "en": "Navy Ponytail",
+    "ja": "ポニーテール",
+    "ru": "Тёмный хвост"
+   },
+   "roles": {
+    "en": [
+     "Lead",
+     "Organizer"
+    ],
+    "ja": [
+     "リーダー",
+     "まとめ役"
+    ]
+   },
+   "vibe": "cool",
+   "lead_mark": true,
+   "suggested_color": "#F59E0B",
+   "files": {
+    "256": "d/d1-256.png",
+    "96": "d/d1-96.png"
+   }
+  },
+  {
+   "no": 20,
+   "id": "d2",
+   "set": "d",
+   "set_name": {
+    "en": "Chibi anime",
+    "ja": "アニメ風のデフォルメ"
+   },
+   "name": {
+    "en": "Star Clip",
+    "ja": "星のピン",
+    "ru": "Заколка-звезда"
+   },
+   "roles": {
+    "en": [
+     "Ideas",
+     "Writing"
+    ],
+    "ja": [
+     "アイデア",
+     "文章"
+    ]
+   },
+   "vibe": "cute",
+   "lead_mark": false,
+   "suggested_color": "#0EA5E9",
+   "files": {
+    "256": "d/d2-256.png",
+    "96": "d/d2-96.png"
+   }
+  },
+  {
+   "no": 21,
+   "id": "d3",
+   "set": "d",
+   "set_name": {
+    "en": "Chibi anime",
+    "ja": "アニメ風のデフォルメ"
+   },
+   "name": {
+    "en": "Silver Fringe",
+    "ja": "銀の前髪",
+    "ru": "Серебристая чёлка"
+   },
+   "roles": {
+    "en": [
+     "Code",
+     "Review"
+    ],
+    "ja": [
+     "コード",
+     "見直し"
+    ]
+   },
+   "vibe": "cool",
+   "lead_mark": false,
+   "suggested_color": "#8B5CF6",
+   "files": {
+    "256": "d/d3-256.png",
+    "96": "d/d3-96.png"
+   }
+  },
+  {
+   "no": 22,
+   "id": "d4",
+   "set": "d",
+   "set_name": {
+    "en": "Chibi anime",
+    "ja": "アニメ風のデフォルメ"
+   },
+   "name": {
+    "en": "Sunny Curls",
+    "ja": "おひさま",
+    "ru": "Солнечные кудри"
+   },
+   "roles": {
+    "en": [
+     "Research",
+     "Quick tasks"
+    ],
+    "ja": [
+     "調べ物",
+     "ちょっとした頼みごと"
+    ]
+   },
+   "vibe": "cute",
+   "lead_mark": false,
+   "suggested_color": "#12A37F",
+   "files": {
+    "256": "d/d4-256.png",
+    "96": "d/d4-96.png"
+   }
+  },
+  {
+   "no": 23,
+   "id": "d5",
+   "set": "d",
+   "set_name": {
+    "en": "Chibi anime",
+    "ja": "アニメ風のデフォルメ"
+   },
+   "name": {
+    "en": "Platinum Pixie",
+    "ja": "プラチナ",
+    "ru": "Короткая платиновая стрижка"
+   },
+   "roles": {
+    "en": [
+     "Review",
+     "Security"
+    ],
+    "ja": [
+     "見直し",
+     "守り"
+    ]
+   },
+   "vibe": "cool",
+   "lead_mark": false,
+   "suggested_color": "#2F6FED",
+   "files": {
+    "256": "d/d5-256.png",
+    "96": "d/d5-96.png"
+   }
+  },
+  {
+   "no": 24,
+   "id": "d6",
+   "set": "d",
+   "set_name": {
+    "en": "Chibi anime",
+    "ja": "アニメ風のデフォルメ"
+   },
+   "name": {
+    "en": "Kind Grandpa",
+    "ja": "おじいさん",
+    "ru": "Добрый дедушка"
+   },
+   "roles": {
+    "en": [
+     "Advisor",
+     "Memory"
+    ],
+    "ja": [
+     "相談役",
+     "記憶"
+    ]
+   },
+   "vibe": "cute",
+   "lead_mark": false,
+   "suggested_color": "#EC4899",
+   "files": {
+    "256": "d/d6-256.png",
+    "96": "d/d6-96.png"
+   }
+  },
+  {
+   "no": 25,
+   "id": "d7",
+   "set": "d",
+   "set_name": {
+    "en": "Chibi anime",
+    "ja": "アニメ風のデフォルメ"
+   },
+   "name": {
+    "en": "Calm Locs",
+    "ja": "ロックス",
+    "ru": "Спокойный взгляд, дреды"
+   },
+   "roles": {
+    "en": [
+     "Ops",
+     "SnapWork"
+    ],
+    "ja": [
+     "段取り",
+     "SnapWork"
+    ]
+   },
+   "vibe": "cool",
+   "lead_mark": false,
+   "suggested_color": "#E5162B",
+   "files": {
+    "256": "d/d7-256.png",
+    "96": "d/d7-96.png"
+   }
+  },
+  {
+   "no": 26,
+   "id": "d8",
+   "set": "d",
+   "set_name": {
+    "en": "Chibi anime",
+    "ja": "アニメ風のデフォルメ"
+   },
+   "name": {
+    "en": "Lavender Waves",
+    "ja": "ラベンダー",
+    "ru": "Лавандовые волны"
+   },
+   "roles": {
+    "en": [
+     "Design",
+     "Writing"
+    ],
+    "ja": [
+     "デザイン",
+     "文章"
+    ]
+   },
+   "vibe": "cute",
+   "lead_mark": false,
+   "suggested_color": "#F59E0B",
+   "files": {
+    "256": "d/d8-256.png",
+    "96": "d/d8-96.png"
+   }
+  },
+  {
+   "no": 27,
+   "id": "e1",
+   "set": "e",
+   "set_name": {
+    "en": "Anime, grown-up proportions",
+    "ja": "アニメ風（大人の頭身）"
+   },
+   "name": {
+    "en": "Navy Ponytail",
+    "ja": "ポニーテール",
+    "ru": "Тёмный хвост"
+   },
+   "roles": {
+    "en": [
+     "Lead",
+     "Organizer"
+    ],
+    "ja": [
+     "リーダー",
+     "まとめ役"
+    ]
+   },
+   "vibe": "cool",
+   "lead_mark": true,
+   "suggested_color": "#F59E0B",
+   "files": {
+    "256": "e/e1-256.png",
+    "96": "e/e1-96.png"
+   }
+  },
+  {
+   "no": 28,
+   "id": "e2",
+   "set": "e",
+   "set_name": {
+    "en": "Anime, grown-up proportions",
+    "ja": "アニメ風（大人の頭身）"
+   },
+   "name": {
+    "en": "Star Clip",
+    "ja": "星のピン",
+    "ru": "Заколка-звезда"
+   },
+   "roles": {
+    "en": [
+     "Ideas",
+     "Writing"
+    ],
+    "ja": [
+     "アイデア",
+     "文章"
+    ]
+   },
+   "vibe": "cute",
+   "lead_mark": false,
+   "suggested_color": "#0EA5E9",
+   "files": {
+    "256": "e/e2-256.png",
+    "96": "e/e2-96.png"
+   }
+  },
+  {
+   "no": 29,
+   "id": "e3",
+   "set": "e",
+   "set_name": {
+    "en": "Anime, grown-up proportions",
+    "ja": "アニメ風（大人の頭身）"
+   },
+   "name": {
+    "en": "Silver Fringe",
+    "ja": "銀の前髪",
+    "ru": "Серебристая чёлка"
+   },
+   "roles": {
+    "en": [
+     "Code",
+     "Review"
+    ],
+    "ja": [
+     "コード",
+     "見直し"
+    ]
+   },
+   "vibe": "cool",
+   "lead_mark": false,
+   "suggested_color": "#8B5CF6",
+   "files": {
+    "256": "e/e3-256.png",
+    "96": "e/e3-96.png"
+   }
+  },
+  {
+   "no": 30,
+   "id": "e4",
+   "set": "e",
+   "set_name": {
+    "en": "Anime, grown-up proportions",
+    "ja": "アニメ風（大人の頭身）"
+   },
+   "name": {
+    "en": "Sunny Curls",
+    "ja": "おひさま",
+    "ru": "Солнечные кудри"
+   },
+   "roles": {
+    "en": [
+     "Research",
+     "Quick tasks"
+    ],
+    "ja": [
+     "調べ物",
+     "ちょっとした頼みごと"
+    ]
+   },
+   "vibe": "cute",
+   "lead_mark": false,
+   "suggested_color": "#12A37F",
+   "files": {
+    "256": "e/e4-256.png",
+    "96": "e/e4-96.png"
+   }
+  },
+  {
+   "no": 31,
+   "id": "e5",
+   "set": "e",
+   "set_name": {
+    "en": "Anime, grown-up proportions",
+    "ja": "アニメ風（大人の頭身）"
+   },
+   "name": {
+    "en": "Platinum Pixie",
+    "ja": "プラチナ",
+    "ru": "Короткая платиновая стрижка"
+   },
+   "roles": {
+    "en": [
+     "Review",
+     "Security"
+    ],
+    "ja": [
+     "見直し",
+     "守り"
+    ]
+   },
+   "vibe": "cool",
+   "lead_mark": false,
+   "suggested_color": "#2F6FED",
+   "files": {
+    "256": "e/e5-256.png",
+    "96": "e/e5-96.png"
+   }
+  },
+  {
+   "no": 32,
+   "id": "e6",
+   "set": "e",
+   "set_name": {
+    "en": "Anime, grown-up proportions",
+    "ja": "アニメ風（大人の頭身）"
+   },
+   "name": {
+    "en": "Kind Grandpa",
+    "ja": "おじいさん",
+    "ru": "Добрый дедушка"
+   },
+   "roles": {
+    "en": [
+     "Advisor",
+     "Memory"
+    ],
+    "ja": [
+     "相談役",
+     "記憶"
+    ]
+   },
+   "vibe": "cute",
+   "lead_mark": false,
+   "suggested_color": "#EC4899",
+   "files": {
+    "256": "e/e6-256.png",
+    "96": "e/e6-96.png"
+   }
+  },
+  {
+   "no": 33,
+   "id": "e7",
+   "set": "e",
+   "set_name": {
+    "en": "Anime, grown-up proportions",
+    "ja": "アニメ風（大人の頭身）"
+   },
+   "name": {
+    "en": "Calm Locs",
+    "ja": "ロックス",
+    "ru": "Спокойный взгляд, дреды"
+   },
+   "roles": {
+    "en": [
+     "Ops",
+     "SnapWork"
+    ],
+    "ja": [
+     "段取り",
+     "SnapWork"
+    ]
+   },
+   "vibe": "cool",
+   "lead_mark": false,
+   "suggested_color": "#E5162B",
+   "files": {
+    "256": "e/e7-256.png",
+    "96": "e/e7-96.png"
+   }
+  },
+  {
+   "no": 34,
+   "id": "e8",
+   "set": "e",
+   "set_name": {
+    "en": "Anime, grown-up proportions",
+    "ja": "アニメ風（大人の頭身）"
+   },
+   "name": {
+    "en": "Lavender Waves",
+    "ja": "ラベンダー",
+    "ru": "Лавандовые волны"
+   },
+   "roles": {
+    "en": [
+     "Design",
+     "Writing"
+    ],
+    "ja": [
+     "デザイン",
+     "文章"
+    ]
+   },
+   "vibe": "cute",
+   "lead_mark": false,
+   "suggested_color": "#F59E0B",
+   "files": {
+    "256": "e/e8-256.png",
+    "96": "e/e8-96.png"
+   }
+  }
+ ]
+}

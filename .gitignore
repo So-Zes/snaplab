@@ -1,0 +1,16 @@
+# Local settings and everything SnapLab writes while it runs (conversations, sessions, keys, logs).
+config.json
+data/
+data-*/
+runtime/
+*.log
+*.pem
+
+# Python / tools
+__pycache__/
+*.pyc
+.venv/
+node_modules/
+
+# Local scratch
+.tmp*/
