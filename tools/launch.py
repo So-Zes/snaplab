@@ -44,7 +44,7 @@ def local_worker():
     """The codex settings for this PC: the WSL worker on Windows, the local SSH worker on Linux when it is ready."""
     if windows():
         return {"backend": "wsl"}
-    root = Path.home() / ".snaplab" / "linux-worker"
+    root = Path.home() / ".snaplab" / ("mac-worker" if sys.platform == "darwin" else "linux-worker")
     if (root / "ready.json").exists():
         state = json.loads((root / "ready.json").read_text(encoding="utf-8"))
         return {"backend": "ssh", "remote": {"host": "127.0.0.1", "user": "snaplab", "ssh_port": int(state.get("ssh_port", 22)),

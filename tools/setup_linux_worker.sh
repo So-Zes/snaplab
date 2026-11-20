@@ -52,7 +52,10 @@ fi
 
 # SSH: this key, from this PC only, with remote port forwarding (SnapLab's translator) and nothing else.
 install -d -m 700 -o snaplab -g snaplab "$home/.ssh"
-printf 'from="127.0.0.1,::1",restrict,port-forwarding %s\n' "$(head -n 1 "$key_file")" > "$home/.ssh/authorized_keys"
+# SNAPLAB_SSH_FROM: a Mac's Lima VM sees the connection arrive through Lima's forward, so its script passes '*'.
+from=${SNAPLAB_SSH_FROM:-127.0.0.1,::1}
+if [ "$from" = '*' ]; then options='restrict,port-forwarding'; else options="from=\"$from\",restrict,port-forwarding"; fi
+printf '%s %s\n' "$options" "$(head -n 1 "$key_file")" > "$home/.ssh/authorized_keys"
 chown snaplab:snaplab "$home/.ssh/authorized_keys"
 chmod 600 "$home/.ssh/authorized_keys"
 systemctl enable --now ssh 2>/dev/null || systemctl enable --now sshd

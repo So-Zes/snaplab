@@ -9,7 +9,7 @@
 #   SNAPLAB_WORKER       yes / no: set up the SnapCode workspace on Linux (asks when not set)
 #   SNAPLAB_NO_BROWSER   1: do not open the browser at the end (servers without a screen)
 set -eu
-trap 'echo "SnapLab setup stopped. Check the message above and run the same command again. Existing settings were kept." >&2' 0
+trap 'status=$?; echo "SnapLab setup stopped. Check the message above and run the same command again. Existing settings were kept." >&2; exit $status' 0
 install_dir=${SNAPLAB_INSTALL_DIR:-"$HOME/.snaplab/app"}
 data_dir=${SNAPLAB_DATA:-"$HOME/.snaplab/data"}
 repository=${SNAPLAB_REPOSITORY:-https://github.com/So-Zes/snaplab.git}
@@ -47,13 +47,22 @@ elif [ -d "$install_dir/.git" ]; then
 elif [ ! -f "$install_dir/tools/launch.py" ]; then
     echo 'The installation folder already contains other files. Choose another SNAPLAB_INSTALL_DIR.' >&2; exit 1
 fi
+# Debian and Ubuntu ship Python without venv/ensurepip; a fresh system also has no package lists yet.
+if ! python3 -c 'import ensurepip, venv' 2>/dev/null && command -v apt-get >/dev/null 2>&1; then
+    echo 'Installing python3-venv with apt. Your system may ask for your password (sudo).'
+    sudo apt-get update
+    sudo apt-get install -y "python$(python3 -c 'import sys; print(f"{sys.version_info[0]}.{sys.version_info[1]}")')-venv" \
+        || sudo apt-get install -y python3-venv
+fi
+# A half-made environment (an earlier run that stopped) is made again.
+if [ -d "$install_dir/.venv" ] && ! "$install_dir/.venv/bin/python" -m pip --version >/dev/null 2>&1; then
+    rm -rf "$install_dir/.venv"
+fi
 if [ ! -x "$install_dir/.venv/bin/python" ]; then
     echo "Creating a Python environment in $install_dir/.venv."
     python3 -m venv "$install_dir/.venv" || {
-        if command -v apt-get >/dev/null 2>&1; then
-            sudo apt-get install -y python3-venv && python3 -m venv "$install_dir/.venv"
-        else false; fi
-    } || { echo 'Install the python3-venv package for this Python version and run this command again.' >&2; exit 1; }
+        rm -rf "$install_dir/.venv"
+        echo 'Install the python3-venv package for this Python version and run this command again.' >&2; exit 1; }
 fi
 venv_python="$install_dir/.venv/bin/python"
 if ! "$venv_python" -c 'import cryptography, keyring' 2>/dev/null; then
@@ -125,6 +134,18 @@ Icon=$install_dir/web/icons/icon-512.png
 Terminal=false
 Categories=Utility;Network;
 EOF
+fi
+# The SnapCode workspace on a Mac: a small Ubuntu VM made with Lima (tools/setup_mac_worker.sh).
+if [ "$os" = Darwin ]; then
+    answer=${SNAPLAB_WORKER:-}
+    if [ -z "$answer" ] && [ -r /dev/tty ]; then
+        printf '%s' 'Set up the SnapCode workspace now? It installs Lima and a small Ubuntu VM (about 6 GB of disk). [Y/n] '
+        read answer < /dev/tty || answer=y
+    fi
+    case "$answer" in
+        n|N|no|NO) echo 'Skipping the SnapCode workspace. Run this installer again with SNAPLAB_WORKER=yes to add it later.' ;;
+        *) sh "$install_dir/tools/setup_mac_worker.sh" || echo 'SnapCode workspace: setup did not finish, so SnapCode stays off. Chat works.' >&2 ;;
+    esac
 fi
 if [ "$os" = Darwin ]; then
     agents="$HOME/Library/LaunchAgents"
