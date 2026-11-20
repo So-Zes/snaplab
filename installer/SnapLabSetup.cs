@@ -379,8 +379,9 @@ namespace SnapLabSetup
             if (python == null) { Mark("prepare", "failed"); throw new StepFailed(T.Get("err.python")); }
             if (!File.Exists(o.VenvPython) && Shell.Run(python, "-m venv " + Shell.Quote(o.Venv), o.AppDir, 600000, null, null) != 0)
             { Mark("prepare", "failed"); throw new StepFailed(T.Get("err.venv")); }
-            if (Shell.Run(o.VenvPython, "-c \"import cryptography\"", o.AppDir, 120000, null, null) != 0
-                && Shell.Run(o.VenvPython, "-m pip install --disable-pip-version-check cryptography", o.AppDir, 1800000, null, null) != 0)
+            // Pillow turns photos upright and removes camera metadata (such as the place) before a model sees them.
+            if (Shell.Run(o.VenvPython, "-c \"import cryptography, PIL\"", o.AppDir, 120000, null, null) != 0
+                && Shell.Run(o.VenvPython, "-m pip install --disable-pip-version-check cryptography pillow", o.AppDir, 1800000, null, null) != 0)
             { Mark("prepare", "failed"); throw new StepFailed(T.Get("err.venv")); }
             Mark("prepare", "done");
 
@@ -542,8 +543,10 @@ namespace SnapLabSetup
                     state("step wsl");
                     int code = Shell.Run("wsl.exe", "--install --no-distribution", null, 1800000, null, Encoding.Unicode);
                     if (code != 0 && code != 3010) { state("failed " + T.Get("err.wsl")); return 1; }
-                    // Turning WSL on for the first time needs a restart before it works.
-                    if (code == 3010 || !Shell.WslWorks()) { state("restart"); return 3; }
+                    // Turning WSL on for the first time needs a restart before Linux can start, even when
+                    // "wsl --version" already answers; setup continues after the next sign-in.
+                    state("restart");
+                    return 3;
                 }
                 state("done");
                 return 0;

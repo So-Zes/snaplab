@@ -67,6 +67,7 @@ class BrowserHelperTest(unittest.TestCase):
         self.assertIn("#absent", out["steps"][0]["error"])
         self.assertFalse((self.root / "never.png").exists())
 
+    @unittest.skipIf(os.name != "nt" and not os.environ.get("DISPLAY"), "the live browser needs a screen (Xvfb in the worker)")
     def test_live_browser_keeps_page_state_between_commands(self):
         code, out = self.run_helper("start")
         self.addCleanup(self.run_helper, "stop")

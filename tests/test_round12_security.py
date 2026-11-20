@@ -210,7 +210,8 @@ class ExportSecurityTest(unittest.TestCase):
         self.app.cfg["codex"]["remote"]["host"] = ""
         with patch("snaplab.harnesses.codex.find_codex", return_value=None):
             result = harness._run_turn({}, self.folder, "hello", self.ctl, True, "fake")
-        self.assertIn("Codex CLI", result.error)
+        # Windows explains the missing Codex CLI; other systems have no local Codex sandbox at all.
+        self.assertTrue("Codex CLI" in result.error or "needs Windows" in result.error, result.error)
 
 
 class RelaySecurityTest(unittest.TestCase):

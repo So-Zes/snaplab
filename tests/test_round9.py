@@ -2,6 +2,7 @@
 import datetime as dt
 import io
 import json
+import os
 import tempfile
 import threading
 import tomllib
@@ -226,6 +227,7 @@ class Round9Test(unittest.TestCase):
         self.assertEqual(self.app.searcher.queries, [])
         self.assertFalse(any(r["kind"] == "tool" for r in self.records()))
 
+    @unittest.skipUnless(os.name == "nt", "the per-user registry exists only on Windows")
     def test_registry_provider_and_search_keys_are_guarded(self):
         secret = "fake-registry-value-12345"
         self.assertIn("BRAVE_API_KEY", self.app.guard.extra_env)

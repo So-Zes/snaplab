@@ -65,9 +65,9 @@ if [ ! -x "$install_dir/.venv/bin/python" ]; then
         echo 'Install the python3-venv package for this Python version and run this command again.' >&2; exit 1; }
 fi
 venv_python="$install_dir/.venv/bin/python"
-if ! "$venv_python" -c 'import cryptography, keyring' 2>/dev/null; then
-    echo "Installing cryptography and keyring in $install_dir/.venv."
-    "$venv_python" -m pip install --disable-pip-version-check cryptography keyring
+if ! "$venv_python" -c 'import cryptography, keyring, PIL' 2>/dev/null; then
+    echo "Installing cryptography, keyring and Pillow in $install_dir/.venv."
+    "$venv_python" -m pip install --disable-pip-version-check cryptography keyring pillow
 fi
 
 # The SnapCode workspace on Linux: a separate "snaplab" account reached over SSH from this PC only.

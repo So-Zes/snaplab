@@ -60,7 +60,8 @@ class WslSecurityTest(unittest.TestCase):
 
     def test_wsl_always_uses_strict_wrapper_and_no_systemd_escape(self):
         with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, SNAPLAB_WSL='1'):
-            command = remote_worker.isolated_command(['/bin/true'], Path(tmp), Path('/home/snaplab'), tmp)
+            # A made-up home: on a Linux PC with a real snaplab account its folders are not readable here.
+            command = remote_worker.isolated_command(['/bin/true'], Path(tmp), Path(tmp) / 'home', tmp)
             self.assertEqual(command[:3], ['/usr/bin/python3', '-I', '/opt/snaplab/wsl_runtime.py'])
             self.assertEqual(remote_worker.limited_command(command), command)
 

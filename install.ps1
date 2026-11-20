@@ -53,10 +53,10 @@ try {
         if ($LASTEXITCODE -ne 0) { throw 'Could not create the Python environment. Check write access and available disk space, then try again.' }
     }
     $venvPython = Join-Path $venv 'Scripts\python.exe'
-    & $venvPython -c "import importlib.util, sys; sys.exit(0 if importlib.util.find_spec('cryptography') else 1)"
+    & $venvPython -c "import importlib.util, sys; sys.exit(0 if importlib.util.find_spec('cryptography') and importlib.util.find_spec('PIL') else 1)"
     if ($LASTEXITCODE -ne 0) {
-        Write-Host "Installing cryptography in $venv for SnapLab notifications."
-        & $venvPython -m pip install cryptography
+        Write-Host "Installing cryptography and Pillow in $venv (notifications, and photos without camera metadata)."
+        & $venvPython -m pip install cryptography pillow
         if ($LASTEXITCODE -ne 0) { throw 'Could not install the Python package. Check your internet connection and run this command again.' }
     }
     if ($SetupWorker) {

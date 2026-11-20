@@ -209,7 +209,7 @@ class RepoHygieneTest(unittest.TestCase):
     def personal_terms(self) -> list[str]:
         terms = []
         for v in (os.environ.get("USERNAME"), os.environ.get("USER"), os.environ.get("COMPUTERNAME")):
-            if v and len(v) >= 4 and v.lower() not in ("user", "admin", "runner"):
+            if v and len(v) >= 4 and v.lower() not in ("user", "admin", "runner", "tester"):
                 terms.append(v)
         st = auth.tailscale_status()
         if st.get("dns_name"):
