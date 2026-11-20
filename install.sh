@@ -69,6 +69,12 @@ if ! "$venv_python" -c 'import cryptography, keyring, PIL, pypdf' 2>/dev/null; t
     echo "Installing cryptography, keyring, Pillow and pypdf in $install_dir/.venv."
     "$venv_python" -m pip install --disable-pip-version-check cryptography keyring pillow pypdf
 fi
+# Optional: recall can also search by meaning on this machine. Without these packages it searches by words.
+if ! "$venv_python" -c 'import numpy, onnxruntime, tokenizers' 2>/dev/null; then
+    echo "Installing numpy, onnxruntime and tokenizers in $install_dir/.venv."
+    "$venv_python" -m pip install --disable-pip-version-check numpy onnxruntime tokenizers ||
+        echo 'Search by meaning stays off; recall still searches by words.'
+fi
 
 # Node.js 20 or newer for MCP servers that start with npx (Debian and Ubuntu ship older versions).
 node_ok() { command -v node >/dev/null 2>&1 && node -e 'process.exit(+process.versions.node.split(".")[0] >= 20 ? 0 : 1)' 2>/dev/null; }

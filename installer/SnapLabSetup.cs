@@ -398,6 +398,10 @@ namespace SnapLabSetup
             if (Shell.Run(o.VenvPython, "-c \"import cryptography, PIL, pypdf\"", o.AppDir, 120000, null, null) != 0
                 && Shell.Run(o.VenvPython, "-m pip install --disable-pip-version-check cryptography pillow pypdf", o.AppDir, 1800000, null, null) != 0)
             { Mark("prepare", "failed"); throw new StepFailed(T.Get("err.venv")); }
+            // numpy, onnxruntime and tokenizers let recall also search by meaning on this PC. Optional: without them
+            // (or if pip cannot get them) recall searches by words, so a failure here does not stop the setup.
+            if (Shell.Run(o.VenvPython, "-c \"import numpy, onnxruntime, tokenizers\"", o.AppDir, 120000, null, null) != 0)
+                Shell.Run(o.VenvPython, "-m pip install --disable-pip-version-check numpy onnxruntime tokenizers", o.AppDir, 1800000, null, null);
             Mark("prepare", "done");
 
             if (o.SkipWsl) { Mark("workspace", "skipped"); WorkspaceProblem = "skipped (--skip-wsl)"; }

@@ -59,6 +59,12 @@ try {
         & $venvPython -m pip install cryptography pillow pypdf
         if ($LASTEXITCODE -ne 0) { throw 'Could not install the Python package. Check your internet connection and run this command again.' }
     }
+    & $venvPython -c "import importlib.util, sys; sys.exit(0 if all(importlib.util.find_spec(m) for m in ('numpy', 'onnxruntime', 'tokenizers')) else 1)"
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "Installing numpy, onnxruntime and tokenizers in $venv (recall can also search by meaning, on this PC)."
+        & $venvPython -m pip install numpy onnxruntime tokenizers
+        if ($LASTEXITCODE -ne 0) { Write-Host 'Search by meaning stays off; recall still searches by words.' }
+    }
     if ($SetupWorker) {
         Write-Host 'Preparing a dedicated WSL2 Linux workspace. Existing Windows and Docker settings will be kept.'
         & $venvPython (Join-Path $InstallDir 'tools\setup_wsl.py') --resume

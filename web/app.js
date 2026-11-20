@@ -3004,7 +3004,7 @@
       const ss = j.sessions || [];
       workHost.querySelectorAll(":scope > :not(.card-h)").forEach((x) => x.remove());
       workHost.appendChild(ss.length ? h("div", { class: "sess-list" }, ss.slice(0, 4).map(sessionRow)) : h("p", { class: "lead-text" }, t("inside.work.none")));
-      if (j.archive) search.count(j.archive.records || 0);
+      if (j.archive) search.count(j.archive.records || 0, j.archive.index);
     }).catch((e) => { ctxHost.appendChild(h("p", { class: "lead-text" }, e.message)); });
   }
 
@@ -3098,6 +3098,17 @@
     const btn = h("button", { class: "btn", type: "button" }, icon("search"), t("archive.search"));
     const out = h("div", { class: "arc-list" });
     const countEl = h("span", { class: "right pp-num" });
+    const semEl = h("p", { class: "lead-text arc-sem", hidden: true, style: { margin: "6px 0 0", fontSize: "12px" } });
+    // Search by meaning (round 21): ready, still being prepared in the background, or off.
+    const semantic = (ix) => {
+      if (!ix) return "";
+      const pct = (x) => Math.floor((x || 0) * 100);
+      if ((ix.chunks_done ?? 1) < 1) return t("archive.sem.upgrading", { p: pct(ix.chunks_done) });
+      if (ix.semantic === "ready") return t("archive.sem.ready");
+      if (ix.semantic === "indexing") return t("archive.sem.indexing", { p: pct(ix.vectors_done) });
+      if (ix.semantic === "loading") return t("archive.sem.loading");
+      return t("archive.sem.off");
+    };
     const run = async () => {
       const q = input.value.trim();
       if (!q) return;
@@ -3115,8 +3126,8 @@
     input.addEventListener("keydown", (e) => { if (e.key === "Enter") run(); });
     const el = h("div", { class: "card form archive-card" }, h("div", { class: "card-h row" }, icon("archive"), h("span", {}, t("archive.title")), countEl),
       h("p", { class: "lead-text" }, t(b.orchestrator ? "archive.d.lead" : "archive.d", { name: b.name })),
-      h("div", { class: "arc-search" }, input, btn), out);
-    return { el, count: (n) => { countEl.textContent = t("archive.count", { n: S.lang === "ru" ? n : num(n) }); } };
+      h("div", { class: "arc-search" }, input, btn), semEl, out);
+    return { el, count: (n, ix) => { countEl.textContent = t("archive.count", { n: S.lang === "ru" ? n : num(n) }); semEl.textContent = semantic(ix); semEl.hidden = !semEl.textContent; } };
   }
 
   async function recordSheet(id) {

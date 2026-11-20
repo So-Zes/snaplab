@@ -8,12 +8,14 @@
    Secret values are removed before writing (the guard), as everywhere else.
 2. Summaries and memory (room summaries, project state, each bot's memory, "about you"): small, in every context.
 3. Search: bots call the `recall` tool. The index (data/archive/index.sqlite3) is built from the archive and can be
-   rebuilt from it at any time; it uses SQLite's full-text search with the trigram tokenizer (works for Japanese
-   without word splitting; terms shorter than 3 characters are matched with LIKE). Results respect what the bot may
-   see (see Scope). Optionally the model reorders the candidates ("recall.rerank"), behind chats in the slot order.
+   rebuilt from it at any time. The default is HybridIndex (hybrid_index.py): word search over ~350-token chunks
+   (SQLite FTS5 trigrams plus CJK character bigrams) fused with a search by meaning (multilingual-e5-small on the CPU,
+   embedder.py; "recall": {"semantic": false} turns that part off). FtsIndex below is the plain whole-record trigram
+   index it builds on (terms shorter than 3 characters are matched with LIKE). Results respect what the bot may see
+   (see Scope). Optionally the model reorders the candidates ("recall.rerank"), behind chats in the slot order.
 
-To use another index (for example one that also searches by meaning with embeddings), write a class with the same
-methods as FtsIndex (add, has, search, get, count, close) and set "recall": {"index": "module:Class"} in config.json.
+To use another index, write a class with the same methods as FtsIndex (add, has, search, get, count, close) and set
+"recall": {"index": "module:Class"} in config.json.
 """
 from __future__ import annotations
 
@@ -30,7 +32,7 @@ from .store import new_id, now_iso
 from .temporal import TemporalScope, instant
 
 RECALL_DEFAULTS = {"rerank": True, "candidates": 24, "results": 6, "snippet_chars": 280, "read_chars": 4000,
-                   "effort": "low"}
+                   "effort": "low", "semantic": True, "semantic_threads": 2}
 KINDS = ("message", "tool", "page", "work", "change", "doc", "memory", "state", "summary", "room")
 SPLIT_RE = re.compile(r"[\s,、。・/|]+")
 PARTICLES = re.compile(r"[のをはがにでとへもや]")
@@ -275,18 +277,49 @@ class Archive:
             except Exception as e:  # noqa: BLE001
                 self.app.log(f"could not load the recall index {spec}: {e!r}; using the built-in one")
         fresh = not path.exists()
-        idx = FtsIndex(path)
+        from .hybrid_index import HybridIndex
+        idx = HybridIndex(path, log=self.app.log, busy=self._chat_busy)
         if idx.needs_upgrade and not fresh:
             # Only the disposable index is replaced; the JSONL originals are untouched.
             idx.db.execute("DELETE FROM docs")
             idx.db.execute("DELETE FROM records")
             idx.db.execute("DELETE FROM replacements")
             idx.db.commit()
+            idx.reset()
         if (fresh or idx.needs_upgrade) and any(self.dir.glob("*/*.jsonl")):
-            self._rebuild(idx)
+            idx.defer_chunking(True)           # the chunks are made by the index's background thread
+            try:
+                self._rebuild(idx)
+            finally:
+                idx.defer_chunking(False)
         idx.db.execute("PRAGMA user_version=3")
         idx.db.commit()
+        idx.start(self._semantic_factory(idx))
         return idx
+
+    def _chat_busy(self) -> bool:
+        """True while a bot turn is running: the index's background work waits."""
+        chat = getattr(self.app, "chat", None)
+        return bool(getattr(chat, "cancel", None))
+
+    def _semantic_factory(self, idx):
+        """What the index's background thread calls to get the embedding model (None: word search only)."""
+        if self.cfg.get("semantic") is False:
+            return None
+
+        def factory():
+            from . import embedder
+            missing = embedder.missing_packages()
+            if missing:
+                self.app.log(f"semantic search off: missing Python packages: {', '.join(missing)}")
+                return None
+            folder = embedder.model_dir(self.app.store.dir)
+            if not embedder.ensure_model(folder, log=self.app.log, stop=idx._stop):
+                if not idx._stop.is_set():
+                    self.app.log("semantic search off: the model files are not available")
+                return None
+            return embedder.E5(folder, threads=int(self.cfg.get("semantic_threads") or 2))
+        return factory
 
     def _rebuild(self, idx) -> int:
         n = 0
@@ -530,9 +563,15 @@ class Archive:
 
     def stats(self, scope: Scope | None = None) -> dict:
         try:
-            return {"records": self.index.count(scope or Scope(everything=True))}
+            out = {"records": self.index.count(scope or Scope(everything=True))}
         except sqlite3.Error:
             return {"records": 0}
+        if hasattr(self.index, "status"):
+            try:
+                out["index"] = self.index.status()
+            except sqlite3.Error:
+                pass
+        return out
 
     # ------------------------------------------------------------ the model puts the best candidates first
 

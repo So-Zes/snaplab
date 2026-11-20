@@ -13,6 +13,7 @@ from unittest.mock import Mock, patch
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
+os.environ.setdefault("SNAPLAB_NO_MODEL_DOWNLOAD", "1")        # tests never fetch the recall embedding model
 
 from snaplab import config  # noqa: E402
 from snaplab.app import App  # noqa: E402
