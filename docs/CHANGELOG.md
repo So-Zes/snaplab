@@ -2,6 +2,13 @@
 
 Newest first. Each entry: the date, what changed, and why.
 
+## 2026-11-20 Version 1.0.0
+
+- Version 1.0.0: the first complete release for Windows, Linux and macOS (the Mac version is still untested on a
+  real Mac). It contains everything up to here: the Windows installer, the first-run tour and phone access, MCP
+  servers from Settings, and the Linux and Mac install scripts. Why: every planned part of the first version is
+  built and was tried end to end on Windows and Linux with a real model.
+
 ## 2026-11-20 Fixes from the first real installs
 
 - The installers now add Pillow and pypdf to SnapLab's Python environment. Why: without Pillow, photos went to
