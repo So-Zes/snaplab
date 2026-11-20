@@ -2,6 +2,13 @@
 
 Newest first. Each entry: the date, what changed, and why.
 
+## 2026-11-21 Version 1.1.0
+
+- Version 1.1.0: models in Settings (make one the default, remove one), Google Gemini, Claude Code and the Codex
+  CLI as models under Advanced settings, the browser panel, the memory fixes, the hybrid recall index and memory
+  lane 1 (all below, since 1.0.0). Running the installer again updates an existing install and adds the optional
+  packages for search by meaning. Why: each part was tried end to end with a real model.
+
 ## 2026-11-21 Recall: hybrid index by default
 
 - `recall` (and memory lane 1) now searches with HybridIndex (`hybrid_index.py`): records are cut into ~350-token
@@ -28,6 +35,18 @@ Newest first. Each entry: the date, what changed, and why.
   (the visible history, this room's summary) is repeated. Why: the archive reached the model only when a bot called
   recall, and small models often do not; research on long-term memory found that a short block of retrieved text at
   the end of the prompt helps more than a longer history (LongMemEval, Lost in the Middle).
+- A record comes in when at least 60% of the message's content words are in it (English function words and
+  kana-only pieces do not count) or its meaning is close (cosine 0.88 with multilingual-e5-small). Calibrated on
+  243 questions about a copy of a real archive (16,154 records) and 35 everyday requests: no everyday request
+  got a record. The first guess (any words, 50%) gave records to 9 of the 35 ("What is the capital of
+  Australia?" matched "what", "is", "the", "of").
+- Measured with Snapscribe 1, each arm on its own copy of the archive: 40 questions and 15 everyday requests.
+  Snapscribe 1 called recall itself for 37 of the 40, so the lane added records to 13. On those 13, 10 answers
+  were right with the lane and 9 without, with 30% fewer recall calls and a median reply of 121 s instead of
+  194 s. Overall 25 and 27 of 40 were right: on the 27 questions where the lane added nothing, 8 answers flipped
+  between the two runs anyway, so the difference is run-to-run variation. 14 and 15 of the 15 everyday replies
+  stayed on topic; the one miss had no record added. The lane stays on: it costs no model call, and models that
+  call recall less often than Snapscribe 1 get the most from it.
 
 ## 2026-11-21 Memory fixes
 
