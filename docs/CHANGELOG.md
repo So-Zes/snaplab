@@ -2,6 +2,21 @@
 
 Newest first. Each entry: the date, what changed, and why.
 
+## 2026-11-20 Windows installer, first-run tour, phone access
+
+- `SnapLab-Setup.exe` (installer/): explains why it needs administrator permission, asks for it only when WSL,
+  Python or Git are missing, then installs SnapLab, its Linux workspace, Start menu and sign-in entries as the
+  user, and opens SnapLab. It continues after a restart and can remove SnapLab again. Why: subscribers should not
+  need PowerShell.
+- `.gitattributes` keeps LF in every clone. Why: Git for Windows checked shell scripts out with CRLF, and the
+  Linux workspace setup failed on them (found by the first real installer run).
+- `tools/setup_wsl.py` says why a Linux step failed; the WSL distribution name and key folder can be changed with
+  SNAPLAB_WSL_DISTRO and SNAPLAB_WSL_DIR (a second installation or a test never touches the first).
+- `tools/launch.py --no-browser` (used at sign-in), and a message window when the Start menu shortcut fails.
+- First-run tour after onboarding, ending with Set up / Not now for phone access.
+- Phone access (`phone.py`, Settings > Phone access): Tailscale install, sign-in, `tailscale serve`, and a QR code
+  that pairs the phone. Why: using SnapLab from the phone is required, and local installations had no way to do it.
+
 ## 2026-11-20 Changeable Snapscribe address, license
 
 - The provider presets (address, model, label) now live in `snaplab/presets.py`, and the setup page reads them

@@ -192,7 +192,13 @@ class Handler(BaseHTTPRequestHandler):
         self.page(status, i18n.text(lang, key), body)
 
     def gate(self, *, api: bool, need_device: bool = True):
-        if self.app.cfg.get("require_tailscale_user", True):
+        if self.via_phone:
+            # Through `tailscale serve`: only the tailnet owner (and then only a paired device) gets in.
+            ok, why = auth.check_user(self.headers, self.app.phone.tailscale().get("owner"))
+            if not ok:
+                self.deny(403, why, api)
+                return None
+        elif self.app.cfg.get("require_tailscale_user", True):
             ok, why = auth.check_user(self.headers, self.app.owner.get())
             if not ok:
                 self.deny(403, why, api)
@@ -210,18 +216,29 @@ class Handler(BaseHTTPRequestHandler):
         return {}
 
     def cookie_name(self):
-        return f"snaplab-local-{self.app.cfg['listen_port']}" if self.app.cfg.get("local_mode") else auth.COOKIE_NAME
+        return f"snaplab-local-{self.app.cfg['listen_port']}" if self.app.cfg.get("local_mode") and not self.via_phone else auth.COOKIE_NAME
 
     def cookie_header(self, value):
-        if self.app.cfg.get("local_mode"):
+        if self.app.cfg.get("local_mode") and not self.via_phone:
             return f"{self.cookie_name()}={value}; Path=/; Max-Age={auth.COOKIE_MAX_AGE}; HttpOnly; SameSite=Strict"
         return auth.cookie_header(value)
 
+    via_phone = False
+
+    def own_origin(self) -> str | None:
+        return self.app.phone.url() if self.via_phone else self.app.public_url
+
     def local_request(self):
+        self.via_phone = False
         if not self.app.cfg.get("local_mode"):
             return True
         expected = f"127.0.0.1:{self.app.cfg['listen_port']}"
-        if (self.client_address[0] not in ("127.0.0.1", "::1") or self.headers.get("Host") != expected
+        loopback = self.client_address[0] in ("127.0.0.1", "::1")
+        if (loopback and self.headers.get("Tailscale-User-Login") and not self.headers.get("Tailscale-Funnel-Request")
+                and self.app.phone.enabled and self.app.phone.host_ok(self.headers.get("Host") or "")):
+            self.via_phone = True      # a phone (or another device) through `tailscale serve`; gate() checks who
+            return True
+        if (not loopback or self.headers.get("Host") != expected
                 or any(self.headers.get(k) for k in ("Forwarded", "X-Forwarded-For", "X-Forwarded-Host", "Tailscale-User-Login", "Tailscale-Funnel-Request"))):
             self.send_json(403, {"ok": False, "error": "Open SnapLab directly on this PC using its launch command."})
             return False
@@ -233,7 +250,7 @@ class Handler(BaseHTTPRequestHandler):
         if not (self.headers.get("Content-Type") or "").startswith("application/json"):
             return False
         origin = self.headers.get("Origin")
-        if origin and self.app.public_url and origin.rstrip("/") != self.app.public_url:
+        if origin and self.own_origin() and origin.rstrip("/") != self.own_origin():
             return False
         site = self.headers.get("Sec-Fetch-Site")
         if site and site not in ("same-origin", "none"):
@@ -322,6 +339,9 @@ class Handler(BaseHTTPRequestHandler):
         app = self.app
         if path == "/api/web-version":
             self.send_json(200, {"version": web_version()})
+            return
+        if path == "/api/phone":
+            self.send_json(200, {"ok": True, **app.phone.summary(), "via_phone": self.via_phone})
             return
         if path == "/api/setup/presets":
             from .presets import presets
@@ -610,6 +630,19 @@ class Handler(BaseHTTPRequestHandler):
             return {"avatar": avatars.save_upload(app.store, b.get("image"))}
         if not app.store.settings().get("onboarded"):
             raise ValueError("finish the first-run setup first")
+        if path == "/api/phone":
+            if self.via_phone:
+                raise ValueError("set up phone access on the PC")
+            action = str(b.get("action") or "")
+            if action == "start":
+                return app.phone.start()
+            if action == "pair":
+                return app.phone.refresh_pairing()
+            if action == "disable":
+                return app.phone.disable()
+            if action == "decline":
+                return app.phone.decline()
+            raise ValueError("unknown action")
         if path == "/api/providers":
             from .setup import configure
             return configure(app, b, add=True)
@@ -625,6 +658,8 @@ class Handler(BaseHTTPRequestHandler):
                 if b["icon_style"] not in ("line", "soft3d"):
                     raise ValueError("invalid icon style")
                 changes["icon_style"] = b["icon_style"]
+            if b.get("tour_done") is True:
+                changes["tour_done"] = True
             st = app.store.update_settings(**changes)
             app.bus.publish("settings.updated", {"settings": st})
             return {"settings": st}
@@ -757,7 +792,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         origin = self.headers.get("Origin")
         if (self.headers.get("X-SnapLab") != "1" or self.headers.get("Sec-Fetch-Site", "same-origin") not in ("same-origin", "none")
-                or (origin and self.app.public_url and origin.rstrip("/") != self.app.public_url)):
+                or (origin and self.own_origin() and origin.rstrip("/") != self.own_origin())):
             self.send_json(403, {"ok": False, "error": "not allowed from here"})
             return
         if self.headers.get("Transfer-Encoding") or len(self.headers.get_all("Content-Length") or []) != 1:

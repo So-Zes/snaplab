@@ -106,6 +106,8 @@ class App:
         self.proxy_token = secrets.token_urlsafe(32)
         from .web_mcp import WebMCP
         self.web_mcp = WebMCP(self)
+        from .phone import Phone
+        self.phone = Phone(self)
         self.translator = None
         self.health: dict = {"model_ok": None, "model_error": None}
         self._status_stop = threading.Event()

@@ -10,8 +10,7 @@ on the same PC.
 SnapLab is made for Snapscribe subscribers. It needs only your Snapscribe API key and
 your PC: the model is **Snapscribe 1**, and everything else runs at home.
 
-> **Status:** early. Windows comes first, then Linux, then macOS. A one-click Windows installer and a first-run
-> tutorial are being built; until then, install with the script below.
+> **Status:** early. Windows has a one-click installer; Linux and macOS install with a script (see below).
 
 ## What you need
 
@@ -22,30 +21,34 @@ your PC: the model is **Snapscribe 1**, and everything else runs at home.
 
 ## Install on Windows
 
-Download [install.ps1](install.ps1) to your Downloads folder, then paste this line into PowerShell:
+1. Download **[SnapLab-Setup.exe](https://github.com/So-Zes/snaplab/releases/latest/download/SnapLab-Setup.exe)**
+   and open it. The file is not code-signed yet, so Windows SmartScreen may say it "protected your PC": choose
+   **More info**, then **Run anyway**.
+2. Setup explains what it installs and why it needs administrator permission once: turning on WSL and installing
+   Python and Git change Windows itself. SnapLab itself always runs as you. If everything is already there, it
+   does not ask.
+3. It downloads SnapLab, prepares the private Linux workspace for SnapCode (the longest step, a few minutes), adds
+   SnapLab to the Start menu and to "start when I sign in", and opens SnapLab in your browser. If Windows has to
+   restart to finish turning on WSL, setup continues by itself after you sign in again.
+4. In the browser, paste your Snapscribe API key, name your first bot, and follow the short tour. SnapLab checks
+   the key with one small request and keeps it in Windows Credential Manager, never in a file.
 
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File "$HOME\Downloads\install.ps1" -SetupWorker
-```
+To open SnapLab later, choose **SnapLab** in the Start menu. To remove it, use **Settings > Apps > Installed apps >
+SnapLab** (your conversations stay unless you tick the box to delete them). Data lives in `~\.snaplab\data` and the
+app in `~\.snaplab\app`. Details, options and how the installer is tested: [docs/installer.md](docs/installer.md).
 
-The script installs what is missing (Python 3.11+ and Git, through Windows Package Manager), creates a separate
-Python environment for SnapLab, prepares the SnapCode workspace (`-SetupWorker`: a dedicated WSL 2 Linux
-distribution, checked for isolation before code work is enabled) and opens SnapLab in your browser. Existing
-software is not upgraded. Run the same command again to open SnapLab later; your conversations and settings stay.
-
-In the browser, choose **Snapscribe 1**, paste your API key and name your first bot. SnapLab checks the key with
-one small request and keeps it in Windows Credential Manager, never in a file.
-
-Data lives in `~\.snaplab\data` and the app in `~\.snaplab\app` (change them with `-DataDir` and `-InstallDir`).
+Prefer a script? [install.ps1](install.ps1) does the same without the window (`-SetupWorker` adds the workspace).
 
 ## Use it from your phone
 
 SnapLab listens only on `127.0.0.1`. Phone access goes through your own Tailscale network with `tailscale serve`
-(never Funnel, so SnapLab is not on the public internet), and each phone is paired once with a one-time link.
+(never Funnel, so SnapLab is not on the public internet), and each phone is paired once with a one-time code.
 
-**Not ready yet in this version:** an installation made with the script above runs in local mode (the PC's
-browser only). The guided phone setup — install Tailscale, sign in, scan a QR code on the phone — is the next step
-of the work.
+The tour after the first start offers **Set up** or **Not now** (later: **Settings > Phone access**). Set up walks
+through four steps on the PC: Tailscale is installed if needed (Windows asks for permission), you sign in to
+Tailscale, you allow a private HTTPS address once if your tailnet has never used one, and a QR code appears. Install
+Tailscale on the phone, sign in with the same account, scan the code and tap **Pair**. Only the owner of the
+tailnet, on a paired device, gets in.
 
 ## What it does
 

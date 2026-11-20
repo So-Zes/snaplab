@@ -1434,3 +1434,27 @@ button.ubar:focus-visible { outline: 2px solid var(--chart); outline-offset: 1px
 .camera-actions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: flex-end; margin-top: 14px; }
 .camera-actions .btn { min-height: 48px; font-size: 16px; }
 .camera-actions .btn[hidden] { display: none; }
+
+/* First-run tour and phone access (2026-11-20) */
+.tour { display: grid; gap: 12px; justify-items: center; text-align: center; padding: 6px 2px 2px; }
+.tour-icon { width: 64px; height: 64px; border-radius: 20px; display: grid; place-items: center; background: var(--brand-soft); color: var(--brand-ink); }
+.tour-icon .ic { width: 30px; height: 30px; }
+.tour-title { margin: 4px 0 0; font-size: 20px; text-wrap: balance; }
+.tour-text { margin: 0; color: var(--ink-2); line-height: 1.6; max-width: 36ch; }
+.tour-dots { flex: none; margin: 6px 0 2px; }
+.tour .qcard-actions { width: 100%; justify-content: flex-end; }
+.phone-steps { display: grid; gap: 10px; }
+.phone-step { display: flex; align-items: center; gap: 10px; color: var(--muted); }
+.phone-step.now { color: var(--ink); font-weight: 650; }
+.phone-step.done { color: var(--ink-2); }
+.phone-step.bad { color: var(--bad); }
+.phone-dot { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; flex: none; font-size: 13px;
+  border: 1.5px solid var(--line-2); background: var(--surface); font-variant-numeric: tabular-nums; }
+.phone-step.now .phone-dot { border-color: var(--brand); color: var(--brand-ink); }
+.phone-step.done .phone-dot { border-color: var(--good); background: var(--good-soft); color: var(--good); }
+.phone-dot .ic { width: 14px; height: 14px; }
+.phone-qr { width: min(100%, 260px); margin: 6px auto; padding: 10px; background: #fff; border-radius: 16px; border: 1px solid var(--line-2); }
+.phone-qr svg { display: block; width: 100%; height: auto; }
+.phone-list { margin: 0; padding-left: 1.2em; display: grid; gap: 8px; line-height: 1.55; }
+.phone-url, .phone-link code { overflow-wrap: anywhere; }
+.phone-page .hint .spinner { vertical-align: -2px; margin-right: 6px; }

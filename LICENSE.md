@@ -14,6 +14,9 @@ company, open an issue on GitHub to ask for permission. Later versions may be of
 
 Required Notice: Copyright So-Zes (https://github.com/So-Zes)
 
+`snaplab/vendor/qrcodegen.py` is Copyright (c) Project Nayuki and is under the MIT License written at the top of
+that file.
+
 ---
 
 ## PolyForm Noncommercial License 1.0.0

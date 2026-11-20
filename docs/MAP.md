@@ -98,6 +98,13 @@ flowchart LR
 - `setup.py`: first-run provider setup (Snapscribe 1, OpenRouter, OpenCode or any OpenAI-compatible API).
 - `presets.py`: the provider presets the setup page offers, in one place. config.json ("presets") and the
   SNAPLAB_SNAPSCRIBE_URL / SNAPLAB_SNAPSCRIBE_MODEL environment variables override them.
+- `phone.py`: phone access for a local installation. Installs Tailscale (Windows), waits for sign-in, publishes
+  SnapLab with `tailscale serve` inside the user's tailnet, and makes a 15-minute pairing QR code (with the vendored
+  MIT `vendor/qrcodegen.py`). `server.py` accepts a request through `tailscale serve` only when phone access is on,
+  the Host is this PC's tailnet address, the login is the tailnet owner, and the device is paired; such a phone
+  cannot change the phone setup.
+- First run: the setup page (key), onboarding (first bot), then a four-card tour (`showTour` in app.js) that ends
+  with Set up / Not now for phone access (`renderPhone`, also under Settings).
 - `deploy.py`: restarts by an updater: cut-off replies and sessions are resumed after the new version starts.
 - `migrate.py`: data migrations between versions.
 - `web/app.js`: the whole UI (no framework, no build). `web/i18n/{en,ja,ru}.js` hold the text, `web/app.css` the
@@ -166,6 +173,9 @@ sequenceDiagram
 - `context`: how much a bot sees per call.
 
 ## 6. Development
+
+The Windows installer is `installer/SnapLabSetup.cs` (build with `installer/build.ps1`); see
+[installer.md](installer.md) for its steps, options and how it is tested.
 
 1. Change the code. Files use LF line endings.
 2. Run the tests: `python -m unittest discover -s tests` (no API calls), and the UI checks `node tests/<name>_ui.mjs`.

@@ -911,8 +911,8 @@ namespace SnapLabSetup
         void ShowDone(Installer installer)
         {
             var flow = NewPage(T.Get("done.title"));
-            Para(flow, o.NoLaunch ? T.Get("done.again") : T.Get("done.body"), body, Ink, 0);
-            Para(flow, T.Get("done.pc"), body, Ink, 12);
+            if (!o.NoLaunch) Para(flow, T.Get("done.body"), body, Ink, 0);
+            Para(flow, T.Get("done.pc"), body, Ink, o.NoLaunch ? 0 : 12);
             Para(flow, T.Get("done.again"), small, Muted, 12);
             if (installer.WorkspaceProblem != null) Para(flow, T.Get("done.noworkspace") + installer.WorkspaceProblem, body, Bad, 14);
             AddButton(T.Get("close"), true, (s, e) => Close());

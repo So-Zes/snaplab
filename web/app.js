@@ -751,6 +751,7 @@
   function render() {
     if (!S.settings) return;
     if (!S.settings.onboarded) return renderOnboarding();
+    if (!S.settings.tour_done && !viaPhone()) setTimeout(showTour, 600);
     const r = S.route;
     document.body.classList.toggle("in-room", r.name === "room");
     switch (r.name) {
@@ -764,8 +765,125 @@
       case "bots": return renderBots();
       case "bot": return renderBot(r.id);
       case "settings": return renderSettings();
+      case "phone": return renderPhone();
       default: return renderChats();
     }
+  }
+
+  // ------------------------------------------------------------------ first-run tour and phone access
+
+  const viaPhone = () => !/^(127\.0\.0\.1|localhost|\[::1\])$/.test(location.hostname);
+
+  function showTour() {
+    if (S.tourShown) return;
+    S.tourShown = true;
+    const slides = [["pc", "tour.pc"], ["chat", "tour.bots"], ["terminal", "tour.code"], ["phone", "tour.phone"]];
+    let i = 0, sh = null;
+    const body = h("div", { class: "tour" });
+    const remember = () => api("/api/settings", { tour_done: true }).then((j) => { S.settings = j.settings; }).catch(() => {});
+    const finish = async (phone) => {
+      await remember();
+      if (!phone) api("/api/phone", { action: "decline" }).catch(() => {});
+      sh.close();
+      if (phone) go("#/phone");
+    };
+    const paint = () => {
+      const [ic, key] = slides[i];
+      const last = i === slides.length - 1;
+      body.replaceChildren(
+        h("div", { class: "tour-icon" }, icon(ic)),
+        h("h3", { class: "tour-title" }, t(key)),
+        h("p", { class: "tour-text" }, t(key + ".body")),
+        h("div", { class: "ob-dots tour-dots" }, slides.map((_, n) => h("span", { class: "ob-dot" + (n <= i ? " on" : "") }))),
+        h("div", { class: "qcard-actions" },
+          last ? h("button", { class: "btn ghost", type: "button", onclick: () => finish(false) }, t("tour.notnow"))
+            : i > 0 ? h("button", { class: "btn ghost", type: "button", onclick: () => { i -= 1; paint(); } }, t("ob.back")) : null,
+          last ? h("button", { class: "btn primary", type: "button", onclick: () => finish(true) }, icon("phone"), t("tour.setup"))
+            : h("button", { class: "btn primary", type: "button", onclick: () => { i += 1; paint(); } }, t("ob.next"))));
+    };
+    paint();
+    sh = sheet(t("tour.title"), body, () => { if (!S.settings.tour_done) remember(); });
+  }
+
+  function renderPhone() {
+    const body = h("div", { class: "page phone-page" });
+    screen({ back: "#/settings", title: t("phone.title"), tab: "settings" }, body);
+    let last = "";
+    const poll = async () => {
+      if (S.route.name !== "phone") return;
+      try {
+        const st = await api("/api/phone");
+        const key = JSON.stringify(st);
+        if (key !== last) { last = key; body.replaceChildren(...phoneView(st)); }
+      } catch (e) { /* offline: try again */ }
+      clearTimeout(S.phoneTimer);
+      S.phoneTimer = setTimeout(poll, 2500);
+    };
+    poll();
+  }
+
+  function phoneAction(action) {
+    return api("/api/phone", { action }).then(() => { clearTimeout(S.phoneTimer); renderPhone(); }).catch(fail);
+  }
+
+  function phoneView(st) {
+    const out = [];
+    if (st.via_phone) {
+      out.push(h("div", { class: "card form" }, h("h3", { class: "card-h" }, icon("check"), t("phone.here")), h("p", { class: "hint" }, t("phone.here.body"))));
+      return out;
+    }
+    out.push(h("div", { class: "card form" }, h("h3", { class: "card-h" }, icon("shield"), t("phone.how")), h("p", { class: "hint" }, t("phone.how.body"))));
+    const active = ["install", "signin", "https", "pair", "done", "pair_timeout"].includes(st.step);
+    if (!active && !st.error) {
+      if (st.enabled) {
+        out.push(h("div", { class: "card form" }, h("h3", { class: "card-h" }, icon("phone"), t("phone.on")),
+          h("p", { class: "hint" }, t("phone.on.body")), h("code", { class: "phone-url" }, st.url || ""),
+          h("div", { class: "qcard-actions" },
+            h("button", { class: "btn ghost", type: "button", onclick: () => phoneAction("disable") }, t("phone.off")),
+            h("button", { class: "btn primary", type: "button", onclick: () => phoneAction("pair") }, icon("plus"), t("phone.pair")))));
+      } else {
+        out.push(h("div", { class: "card form" }, h("h3", { class: "card-h" }, icon("phone"), t("phone.start")),
+          h("p", { class: "hint" }, t("phone.start.body")),
+          h("button", { class: "btn primary wide", type: "button", onclick: () => phoneAction("start") }, t("phone.setup"))));
+      }
+      return out;
+    }
+    const order = ["install", "signin", "https", "pair"];
+    const at = st.step === "done" ? 4 : st.step === "pair_timeout" ? 3 : order.indexOf(st.step);
+    out.push(h("div", { class: "card form phone-steps" }, order.map((k, n) => h("div", { class: "phone-step" + (n < at ? " done" : n === at ? " now" : "") + (n === at && st.error ? " bad" : "") },
+      h("span", { class: "phone-dot" }, n < at ? icon("check") : String(n + 1)), h("span", {}, t("phone.step." + k))))));
+    const card = h("div", { class: "card form" });
+    out.push(card);
+    if (st.error) {
+      append(card, [h("h3", { class: "card-h" }, icon("alert"), t("phone.stopped")), h("p", { class: "hint" }, t("phone.err." + st.error)),
+        st.error === "install_manually" ? h("a", { class: "btn ghost", href: "https://tailscale.com/download", target: "_blank", rel: "noopener" }, t("phone.download")) : null,
+        h("button", { class: "btn primary", type: "button", onclick: () => phoneAction("start") }, icon("refresh"), t("phone.retry"))]);
+    } else if (st.step === "install") {
+      append(card, [h("h3", { class: "card-h" }, h("span", { class: "spinner" }), t("phone.installing")), h("p", { class: "hint" }, t("phone.installing.body"))]);
+    } else if (st.step === "signin") {
+      append(card, [h("h3", { class: "card-h" }, t("phone.signin")), h("p", { class: "hint" }, t("phone.signin.body")),
+        st.auth_url ? h("a", { class: "btn primary wide", href: st.auth_url, target: "_blank", rel: "noopener" }, t("phone.signin.go"))
+          : h("p", { class: "hint" }, h("span", { class: "spinner" }), t("phone.wait"))]);
+    } else if (st.step === "https") {
+      append(card, [h("h3", { class: "card-h" }, t("phone.https")), h("p", { class: "hint" }, t("phone.https.body")),
+        st.enable_url ? h("a", { class: "btn primary wide", href: st.enable_url, target: "_blank", rel: "noopener" }, t("phone.https.go"))
+          : h("p", { class: "hint" }, h("span", { class: "spinner" }), t("phone.wait"))]);
+    } else if (st.step === "pair" || st.step === "pair_timeout") {
+      const qr = h("div", { class: "phone-qr", role: "img", "aria-label": t("phone.qr") });
+      if (st.qr) qr.innerHTML = st.qr;
+      append(card, [h("h3", { class: "card-h" }, t("phone.pair.title")),
+        h("ol", { class: "phone-list" },
+          h("li", {}, t("phone.pair.app"), " ", h("a", { href: "https://apps.apple.com/app/tailscale/id1470499037", target: "_blank", rel: "noopener" }, "App Store"), " · ",
+            h("a", { href: "https://play.google.com/store/apps/details?id=com.tailscale.ipn", target: "_blank", rel: "noopener" }, "Google Play")),
+          h("li", {}, t("phone.pair.scan"))),
+        st.step === "pair" ? qr : null,
+        st.pair_url ? h("p", { class: "hint phone-link" }, t("phone.pair.link"), " ", h("code", {}, st.pair_url)) : null,
+        h("button", { class: "btn ghost", type: "button", onclick: () => phoneAction("pair") }, icon("refresh"), t("phone.pair.new"))]);
+    } else if (st.step === "done") {
+      append(card, [h("h3", { class: "card-h" }, icon("check"), t("phone.done")), h("p", { class: "hint" }, t("phone.done.body")),
+        h("a", { class: "btn primary wide", href: "#/home" }, t("phone.finish"))]);
+    }
+    return out;
   }
 
   // ------------------------------------------------------------------ onboarding
@@ -2961,6 +3079,8 @@
       h("div", { class: "card form" }, h("h3", { class: "card-h" }, icon("spark"), t("settings.icons")), iconSeg),
       h("div", { class: "card form" }, h("h3", { class: "card-h" }, icon("users"), t("settings.you"), youCount), h("p", { class: "hint" }, t("settings.you.note")), you, youSave),
       h("div", { class: "card form" }, h("h3", { class: "card-h" }, icon("bell"), t("settings.notify")), pushState, needOn, toggles, h("p", { class: "hint" }, t("settings.notify.three"))),
+      h("div", { class: "card form" }, h("h3", { class: "card-h" }, icon("phone"), t("phone.title")), h("p", { class: "hint" }, t("phone.settings.body")),
+        h("a", { class: "btn ghost", href: "#/phone" }, t("phone.open"), icon("right"))),
       h("div", { class: "card form" }, h("h3", { class: "card-h" }, icon("sail"), t("settings.install")), h("p", { class: "hint" }, t("settings.install.body")), installBtn()),
       modelsCard(),
       backgroundCard(),
