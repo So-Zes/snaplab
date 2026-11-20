@@ -84,6 +84,7 @@ def ensure_model(folder: Path, log=None, download: bool = True, opener=None, sto
                 mark[name] = [size, dest.stat().st_mtime_ns, sha]
                 continue
             if not download:
+                log("semantic search off: the model files are not in " + str(folder) + " (downloads are off)")
                 return False
             dest.parent.mkdir(parents=True, exist_ok=True)
             part = dest.with_name(dest.name + f".part-{os.getpid()}")

@@ -315,9 +315,7 @@ class Archive:
                 return None
             folder = embedder.model_dir(self.app.store.dir)
             if not embedder.ensure_model(folder, log=self.app.log, stop=idx._stop):
-                if not idx._stop.is_set():
-                    self.app.log("semantic search off: the model files are not available")
-                return None
+                return None                          # ensure_model has written the one log line
             return embedder.E5(folder, threads=int(self.cfg.get("semantic_threads") or 2))
         return factory
 
