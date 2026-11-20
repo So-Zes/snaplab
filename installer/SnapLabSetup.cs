@@ -369,7 +369,7 @@ namespace SnapLabSetup
                 if (Directory.Exists(o.AppDir) && Directory.EnumerateFileSystemEntries(o.AppDir).Any())
                 { Mark("download", "failed"); throw new StepFailed(T.Get("err.folder") + o.AppDir); }
                 Directory.CreateDirectory(Path.GetDirectoryName(o.AppDir));
-                if (Shell.Run(git, "clone --branch " + o.Branch + " -- " + Shell.Quote(o.Repo) + " " + Shell.Quote(o.AppDir), null, 1800000, null, null) != 0)
+                if (Shell.Run(git, "-c core.autocrlf=false clone --branch " + o.Branch + " -- " + Shell.Quote(o.Repo) + " " + Shell.Quote(o.AppDir), null, 1800000, null, null) != 0)
                 { Mark("download", "failed"); throw new StepFailed(T.Get("err.download")); }
             }
             Mark("download", "done");

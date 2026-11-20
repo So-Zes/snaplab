@@ -1,0 +1,7 @@
+# Keep LF everywhere, whatever core.autocrlf says on the PC that clones this repository: shell scripts are
+# copied into the Linux workspace and break with CRLF line endings.
+* text=auto eol=lf
+*.png binary
+*.webp binary
+*.ico binary
+*.jpg binary

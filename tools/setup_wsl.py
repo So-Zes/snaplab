@@ -45,7 +45,7 @@ def configure(root, *, packages=True):
                   "install -d -m 755 /opt/snaplab /run/sshd\n")
         result = wsl('-d', DISTRO, '-u', 'root', '--cd', '/', '--', 'sh', '-s', input=script.encode(), timeout=900)
         if result.returncode:
-            raise RuntimeError('Linux package setup failed; SnapCode remains disabled')
+            raise RuntimeError('Linux package setup failed; SnapCode remains disabled: ' + tail(result))
     helpers = {Path(name).name: (ROOT / name).read_bytes() for name in MANAGED}
     helpers['remote_worker.py'] = (ROOT / 'snaplab/harnesses/remote_worker.py').read_bytes()
     helpers['setup_worker.sh'] = (ROOT / 'tools/setup_worker.sh').read_bytes()
@@ -84,7 +84,7 @@ test -e /usr/local/bin/codex || ln -s /opt/snaplab/toolchain/node_modules/.bin/c
 """
         result = wsl('-d', DISTRO, '-u', 'root', '--cd', '/', '--', 'sh', '-s', input=script.encode(), timeout=1800)
         if result.returncode:
-            raise RuntimeError('Linux desktop setup failed; SnapCode remains disabled')
+            raise RuntimeError('Linux desktop setup failed; SnapCode remains disabled: ' + tail(result))
     identity = root / 'identity'
     if not identity.exists():
         subprocess.run(['ssh-keygen', '-q', '-t', 'ed25519', '-N', '', '-f', str(identity)], check=True, capture_output=True)
@@ -179,6 +179,12 @@ raise SystemExit(outer(isolated_command(["/bin/true"],folder,home,config),probe_
         translator.stop()
         (root / 'windows-exec-result.json').write_text(json.dumps(windows_report, indent=2), encoding='utf-8')
     (root / 'ready.json').write_text(json.dumps(state), encoding='utf-8')
+
+
+def tail(result, limit=400):
+    """The last lines a failed Linux command printed, so the installer can show why."""
+    text = decode((result.stdout or b"") + (result.stderr or b"")).strip().splitlines()
+    return " | ".join(text[-3:])[-limit:] or ("exit " + str(result.returncode))
 
 
 def wsl(*args, **kwargs):
