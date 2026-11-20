@@ -43,10 +43,12 @@ MAX_TOKENS, OVERLAP_TOKENS, EMBED_CHUNKS = 350, 40, 16
 RRF_K, W_LEX, W_DENSE, GAMMA = 60, 1.0, 0.5, 0.05
 LEG_CHUNKS, LEG_RECORDS = 200, 100
 INLINE_CHARS = 200_000            # bigger records are chunked by the background thread
-BACKFILL_BATCH, EMBED_BATCH = 200, 16
-CJK = re.compile(r"[぀-ヿ㐀-鿿豈-﫿ｦ-ﾟ]")
-RUN = re.compile(r"[぀-ヿ㐀-鿿ｦ-ﾟ]+|[a-z0-9_]+")
-HIRA = re.compile(r"^[぀-ゟ]+$")
+# Vectors: 64 pending chunks at a time, one by one (on the CPU, no padding is faster than batches: 38 vs 11-27
+# chunks/s on 2 threads, and the memory pool stays small).
+BACKFILL_BATCH, EMBED_BATCH, EMBED_WINDOW = 200, 1, 64
+CJK = re.compile(r"[\u3040-\u30ff\u3400-\u9fff\uf900-\ufaff\uff66-\uff9f]")
+RUN = re.compile(r"[\u3040-\u30ff\u3400-\u9fff\uff66-\uff9f]+|[a-z0-9_]+")
+HIRA = re.compile(r"^[\u3040-\u309f]+$")
 SPACES = re.compile(r"[\s,、。・/|]+")
 PIECE_SPLIT = re.compile(r"[\s,、。・/|?？!！「」『』()（）\[\]{}\"':：]+|[のをはがにでとへもや]")
 
@@ -82,7 +84,7 @@ def bigram_tokens(text: str) -> list[str]:
     out = []
     for m in RUN.finditer(text):
         w = m.group(0)
-        if w[0] < "　" or len(w) == 1:
+        if w[0] < "\u3000" or len(w) == 1:
             out.append(w)
         else:
             out.extend(w[i:i + 2] for i in range(len(w) - 1))
@@ -98,7 +100,7 @@ def bigram_query(q: str) -> str:
     toks, seen = [], set()
     for m in RUN.finditer(norm(q)):
         w = m.group(0)
-        cand = [(w, False)] if w[0] < "　" else [(w, True)] if len(w) == 1 else \
+        cand = [(w, False)] if w[0] < "\u3000" else [(w, True)] if len(w) == 1 else \
             [(w[i:i + 2], False) for i in range(len(w) - 1)]
         for t, pref in cand:
             if t not in seen:
@@ -438,7 +440,7 @@ class HybridIndex(FtsIndex):
             rows = self.db.execute(
                 "SELECT c.cid, c.ord, r.title, substr(d.text, c.start + 1, c.stop - c.start) FROM chunks c "
                 "JOIN records r ON r.n = c.rec JOIN docs d ON d.rowid = c.rec "
-                f"WHERE c.vec IS NULL AND c.ord < {EMBED_CHUNKS} ORDER BY c.cid LIMIT ?", (EMBED_BATCH,)).fetchall()
+                f"WHERE c.vec IS NULL AND c.ord < {EMBED_CHUNKS} ORDER BY c.cid LIMIT ?", (EMBED_WINDOW,)).fetchall()
         if not rows:
             self._pending = 0
             self.semantic = "ready"
@@ -446,7 +448,7 @@ class HybridIndex(FtsIndex):
         texts = [((title + "\n") if title and o == 0 else "") + (text or "") for _, o, title, text in rows]
         t0 = time.time()
         try:
-            v = self.embedder.encode(texts)
+            v = self.embedder.encode(texts, batch=EMBED_BATCH)
         except Exception as e:  # noqa: BLE001 - skip what cannot be embedded, keep going
             self.log(f"semantic search: {len(rows)} chunks skipped ({e!r})")
             with self.lock:
@@ -463,7 +465,7 @@ class HybridIndex(FtsIndex):
                                             ).fetchone()[0]
         self.vectors.add([r[0] for r in rows], v)
         self.semantic = "indexing" if self._pending else "ready"
-        self._stop.wait(min(2.0, time.time() - t0))        # at most about half of two cores
+        self._stop.wait(min(10.0, time.time() - t0))       # at most about half of two cores
         return True
 
     def dense_ready(self) -> bool:

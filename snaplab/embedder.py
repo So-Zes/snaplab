@@ -135,7 +135,6 @@ class E5:
         so = ort.SessionOptions()
         so.intra_op_num_threads = max(1, int(threads))
         so.inter_op_num_threads = 1
-        so.enable_cpu_mem_arena = False                       # keeps RAM flat between batches
         so.add_session_config_entry("session.intra_op.allow_spinning", "0")   # idle threads do not burn CPU
         self.np = np
         self.sess = ort.InferenceSession(str(folder / "onnx" / "model_qint8_avx512_vnni.onnx"), so,
