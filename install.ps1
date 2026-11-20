@@ -34,9 +34,9 @@ try {
     if (-not $pythonExe) { Install-PackageForUser 'Python.Python.3.13' 'Python 3.13'; $pythonExe = Find-Python }
     if (-not $pythonExe) { throw 'Python is installed but not available yet. Open a new PowerShell window and run this command again.' }
     if (-not (Get-Command git -ErrorAction SilentlyContinue)) { Install-PackageForUser 'Git.Git' 'Git' }
-    foreach ($optional in @('node', 'codex')) {
-        if (Get-Command $optional -ErrorAction SilentlyContinue) { Write-Host "$optional is available (optional)." }
-        else { Write-Host "$optional is not installed. It is optional for code sessions and is not needed for chatting." }
+    if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
+        Write-Host 'Node.js is not installed. SnapLab works without it, but MCP servers that start with npx need it.'
+        try { Install-PackageForUser 'OpenJS.NodeJS.LTS' 'Node.js LTS' } catch { Write-Host $_.Exception.Message }
     }
     # A checked-out script uses its own repository. A downloaded script clones to a new directory.
     if ($PSScriptRoot -and (Test-Path -LiteralPath (Join-Path $PSScriptRoot 'tools\launch.py'))) { $InstallDir = $PSScriptRoot }

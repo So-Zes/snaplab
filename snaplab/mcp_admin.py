@@ -145,7 +145,13 @@ def check(name: str, conf: dict, env: dict, token: str | None) -> list[dict]:
     try:
         return client.list_tools()
     except MCPError as e:
-        raise ValueError(f"The server did not answer: {e}") from None
+        hint = ""
+        old = re.search(r"Node\.js v(\d+)\.", str(e))
+        if old and int(old.group(1)) < 20:
+            hint = f" This server needs a newer Node.js (20 or later; this PC has {old.group(1)})."
+        elif "could not start" in str(e) and conf.get("command") in ("npx", "node", "npm"):
+            hint = " Install Node.js (nodejs.org) and try again."
+        raise ValueError(f"The server did not answer: {e}{hint}") from None
     finally:
         client.close()
 

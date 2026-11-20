@@ -70,6 +70,23 @@ if ! "$venv_python" -c 'import cryptography, keyring, PIL, pypdf' 2>/dev/null; t
     "$venv_python" -m pip install --disable-pip-version-check cryptography keyring pillow pypdf
 fi
 
+# Node.js 20 or newer for MCP servers that start with npx (Debian and Ubuntu ship older versions).
+node_ok() { command -v node >/dev/null 2>&1 && node -e 'process.exit(+process.versions.node.split(".")[0] >= 20 ? 0 : 1)' 2>/dev/null; }
+node_dir="$HOME/.snaplab/node"
+[ -x "$node_dir/bin/node" ] && PATH="$node_dir/bin:$PATH" && export PATH
+if ! node_ok; then
+    if [ "$os" = Darwin ] && command -v brew >/dev/null 2>&1; then
+        echo 'Installing Node.js with Homebrew (for MCP servers).'; brew install node || true
+    elif command -v apt-get >/dev/null 2>&1; then
+        command -v npm >/dev/null 2>&1 || sudo apt-get install -y nodejs npm || true
+        if command -v npm >/dev/null 2>&1; then
+            echo "Installing Node.js 22 for MCP servers into $node_dir."
+            npm install --global --silent --prefix "$node_dir" node@22 && PATH="$node_dir/bin:$PATH" && export PATH || true
+        fi
+    fi
+    node_ok || echo 'Node.js 20 or newer is not available; MCP servers that start with npx will not run until it is installed.'
+fi
+
 # The SnapCode workspace on Linux: a separate "snaplab" account reached over SSH from this PC only.
 if [ "$os" = Linux ]; then
     answer=${SNAPLAB_WORKER:-}
@@ -109,6 +126,7 @@ Description=SnapLab
 After=network-online.target
 
 [Service]
+Environment=PATH=$node_dir/bin:$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin
 ExecStart="$venv_python" "$install_dir/tools/launch.py" --data "$data_dir" --port $port --foreground
 Restart=on-failure
 RestartSec=5

@@ -218,6 +218,18 @@ namespace SnapLabSetup
             return File.Exists(c) ? c : null;
         }
 
+        public static bool NodeOk()
+        {
+            string node = Which("node.exe");
+            if (node == null)
+            {
+                string c = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "nodejs", "node.exe");
+                if (!File.Exists(c)) return false;
+                node = c;
+            }
+            return Run(node, "-e \"process.exit(+process.versions.node.split('.')[0] >= 20 ? 0 : 1)\"", null, 60000, null, null) == 0;
+        }
+
         public static bool WslWorks()
         {
             return Run("wsl.exe", "--status", null, 120000, null, Encoding.Unicode) == 0
@@ -240,11 +252,11 @@ namespace SnapLabSetup
                                "SnapLab は、Bot と作業用の環境をこの PC の中で動かします。この PC のブラウザから使え、あとでスマホからも使えます。" } },
             { "what", new[] { "What setup installs", "インストールするもの" } },
             { "what1", new[] { "Windows Subsystem for Linux (WSL), if it is not turned on yet", "Windows Subsystem for Linux（WSL）。まだ有効でない場合だけ" } },
-            { "what2", new[] { "Python and Git, if they are missing", "Python と Git。入っていない場合だけ" } },
+            { "what2", new[] { "Python, Git and Node.js, if they are missing (Node.js runs MCP servers)", "Python、Git、Node.js。入っていない場合だけ（Node.js は MCP サーバーを動かします）" } },
             { "what3", new[] { "SnapLab and its private Linux workspace (about 3 GB)", "SnapLab と、専用の Linux の作業環境（約 3 GB）" } },
             { "why", new[] { "Why administrator permission is needed", "管理者の権限が要る理由" } },
-            { "why1", new[] { "Turning on WSL and installing Python and Git for this PC change Windows itself, so Windows asks for administrator permission once. SnapLab itself runs as you, never as an administrator.",
-                              "WSL を有効にすることと、Python と Git をこの PC に入れることは Windows そのものを変えるので、Windows が一度だけ管理者の権限を求めます。SnapLab 自体は管理者ではなく、あなたの権限で動きます。" } },
+            { "why1", new[] { "Turning on WSL and installing Python, Git and Node.js for this PC change Windows itself, so Windows asks for administrator permission once. SnapLab itself runs as you, never as an administrator.",
+                              "WSL を有効にすることと、Python、Git、Node.js をこの PC に入れることは Windows そのものを変えるので、Windows が一度だけ管理者の権限を求めます。SnapLab 自体は管理者ではなく、あなたの権限で動きます。" } },
             { "time", new[] { "Setup takes 10 to 30 minutes. Keep this PC connected to the internet.", "インストールには 10〜30 分かかります。PC をインターネットにつないだままにしてください。" } },
             { "install", new[] { "Install", "インストール" } },
             { "continue", new[] { "Continue", "続ける" } },
@@ -254,7 +266,8 @@ namespace SnapLabSetup
                                 "Windows で管理者の権限が許可されなかったので、何も変えていません。もう一度インストールを押してください。" } },
             { "installing", new[] { "Installing SnapLab", "SnapLab をインストールしています" } },
             { "s.check", new[] { "Check this PC", "この PC を確認する" } },
-            { "s.admin", new[] { "Turn on WSL and install Python and Git", "WSL を有効にし、Python と Git を入れる" } },
+            { "s.admin", new[] { "Turn on WSL and install Python, Git and Node.js", "WSL を有効にし、Python、Git、Node.js を入れる" } },
+            { "err.node", new[] { "Node.js could not be installed. SnapLab works without it, but MCP servers that start with npx will not.", "Node.js を入れられませんでした。SnapLab はなくても動きますが、npx で始める MCP サーバーは動きません。" } },
             { "s.download", new[] { "Download SnapLab", "SnapLab をダウンロードする" } },
             { "s.prepare", new[] { "Prepare SnapLab", "SnapLab を準備する" } },
             { "s.workspace", new[] { "Prepare the Linux workspace (the longest step)", "Linux の作業環境を準備する（いちばん長い手順）" } },
@@ -331,6 +344,7 @@ namespace SnapLabSetup
             if (!o.SkipWsl && !Shell.WslWorks()) need.Add("wsl");
             if (Shell.FindPython() == null) need.Add("python");
             if (Shell.FindGit() == null) need.Add("git");
+            if (!Shell.NodeOk()) need.Add("node");
             return need;
         }
 
@@ -539,6 +553,15 @@ namespace SnapLabSetup
                     Shell.RefreshPath();
                     if (!ok || Shell.FindGit() == null) { state("failed " + T.Get("err.git")); return 1; }
                 }
+                if (need.Contains("node"))
+                {
+                    // Optional: MCP servers that start with npx need Node.js 20 or newer. A failure does not stop setup.
+                    state("step node");
+                    bool ok = winget != null && Shell.Run(winget, "install --id OpenJS.NodeJS.LTS --exact --source winget --scope machine --silent --accept-package-agreements --accept-source-agreements --disable-interactivity", null, 1800000, null, null) == 0;
+                    if (!ok) ok = InstallNodeMsi();
+                    Shell.RefreshPath();
+                    if (!ok || !Shell.NodeOk()) state("note " + T.Get("err.node"));
+                }
                 if (need.Contains("wsl"))
                 {
                     state("step wsl");
@@ -559,13 +582,44 @@ namespace SnapLabSetup
             }
         }
 
+        // The current Node.js 22 MSI: its name comes from the release's SHA256SUMS, and the file must match it.
+        static bool InstallNodeMsi()
+        {
+            try
+            {
+                const string Base = "https://nodejs.org/dist/latest-v22.x/";
+                string sums;
+                using (var web = new WebClient()) sums = web.DownloadString(Base + "SHASUMS256.txt");
+                foreach (string line in sums.Split('\n'))
+                {
+                    string[] parts = line.Trim().Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                    if (parts.Length == 2 && parts[1].EndsWith("-x64.msi"))
+                        return InstallDownloaded(Base + parts[1], "OpenJS Foundation", null, parts[0]);
+                }
+            }
+            catch (Exception ex) { Log.Write("node: " + ex.Message); }
+            return false;
+        }
+
         static bool InstallDownloaded(string url, string signer, string args)
+        {
+            return InstallDownloaded(url, signer, args, null);
+        }
+
+        static bool InstallDownloaded(string url, string signer, string args, string sha256)
         {
             string file = Path.Combine(Path.GetTempPath(), "snaplab-" + Path.GetFileName(url));
             try
             {
                 Log.Write("download " + url);
                 using (var web = new WebClient()) web.DownloadFile(url, file);
+                if (sha256 != null)
+                {
+                    string actual;
+                    using (var f = File.OpenRead(file)) using (var h = System.Security.Cryptography.SHA256.Create())
+                        actual = BitConverter.ToString(h.ComputeHash(f)).Replace("-", "").ToLowerInvariant();
+                    if (actual != sha256.ToLowerInvariant()) { Log.Write("checksum mismatch for " + url); return false; }
+                }
                 // Only run an installer that carries a valid signature from the expected publisher.
                 var sb = new StringBuilder();
                 string ps = "$s=Get-AuthenticodeSignature -LiteralPath '" + file.Replace("'", "''") + "'; $s.Status.ToString(); $s.SignerCertificate.Subject";
@@ -573,6 +627,8 @@ namespace SnapLabSetup
                 string result = sb.ToString();
                 if (!result.StartsWith("Valid") || result.IndexOf(signer, StringComparison.OrdinalIgnoreCase) < 0)
                 { Log.Write("signature check failed: " + result.Trim()); return false; }
+                if (file.EndsWith(".msi"))
+                    return Shell.Run("msiexec.exe", "/i " + Shell.Quote(file) + " /qn /norestart", null, 1800000, null, null) == 0;
                 return Shell.Run(file, args, null, 1800000, null, null) == 0;
             }
             catch (Exception ex) { Log.Write("download failed: " + ex.Message); return false; }
