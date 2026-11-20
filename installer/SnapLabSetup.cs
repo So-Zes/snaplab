@@ -701,15 +701,22 @@ namespace SnapLabSetup
 
         static void TryDelete(string dir)
         {
-            if (!Directory.Exists(dir)) return;
-            try
+            // A process that was just stopped can hold a file for a moment: try a few times.
+            for (int attempt = 1; attempt <= 5 && Directory.Exists(dir); attempt++)
             {
-                foreach (string f in Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories))
-                    try { File.SetAttributes(f, FileAttributes.Normal); } catch (Exception) { }
-                Directory.Delete(dir, true);
-                Log.Write("removed " + dir);
+                try
+                {
+                    foreach (string f in Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories))
+                        try { File.SetAttributes(f, FileAttributes.Normal); } catch (Exception) { }
+                    Directory.Delete(dir, true);
+                    Log.Write("removed " + dir);
+                }
+                catch (Exception ex)
+                {
+                    Log.Write("could not remove " + dir + " (try " + attempt + "): " + ex.Message);
+                    Thread.Sleep(1000);
+                }
             }
-            catch (Exception ex) { Log.Write("could not remove " + dir + ": " + ex.Message); }
         }
     }
 
