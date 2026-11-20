@@ -71,7 +71,17 @@ flowchart LR
 - `harnesses/adapters.py`: turns Pi and Codex records into one format.
 - `harnesses/desktop.py`, `browser.mjs`, `capture.*`, `keep.py`: the private desktop, the Chrome the agent drives,
   screenshots, and processes kept until the end of a turn. `desktop.py marks` numbers clickable things so the
-  agent clicks `--mark N` instead of guessing coordinates. See [computer-use.md](computer-use.md).
+  agent clicks `--mark N` instead of guessing coordinates. See [computer-use.md](computer-use.md). The live browser
+  is a Chrome window on the job's screen by default (`--headless` for one without), and its profile keeps sign-ins
+  and tabs between turns.
+- `browser_live.py`: the browser panel (`#/browser/<session>`, "Open browser" on a SnapCode session). The user
+  watches the session's Chrome live and, after Take over (always between turns), clicks, scrolls, types (IME
+  text arrives finished) and navigates. During a turn it is the agent's own browser; between turns SnapLab runs it
+  alone in the same sandbox with the same profile (`remote_worker.live`, host mode), so a sign-in made here is there
+  for the agent. The DevTools protocol goes through SSH and the job's `.snaplab/live.sock` (`browser.mjs --live`);
+  the debugging port never leaves the job. Frames (Page.startScreencast, JPEG, only while someone watches) and the
+  state go to the page as server-sent events (`/api/browser/<id>/live`); input is `POST /api/browser/<id>`. While
+  the user holds control, `browser.mjs` and `desktop.py` input wait. Typed text is never logged or archived.
 - `harnesses/base.py`, `contract.py`: the harness interface and its check.
 - `harnesses/codex.py`, `pi.py`, `bot.py`, `tests.py`: the harnesses (Codex, Pi, bot only, tests only).
 - `harnesses/wsl.py`, `wsl_network.py`, `wsl_runtime.py`: starting and sharing the WSL workspace, its network relay

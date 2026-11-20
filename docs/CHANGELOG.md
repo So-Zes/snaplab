@@ -2,6 +2,21 @@
 
 Newest first. Each entry: the date, what changed, and why.
 
+## 2026-11-21 Browser panel
+
+- A SnapCode session's browser can be opened inside SnapLab, on the PC or the phone ("Open browser" on the session,
+  `#/browser/<id>`). The user sees the page live, types an address, clicks, scrolls and types (Japanese IME
+  included), switches tabs and answers page dialogs. During a turn it is the agent's own Chrome: the user watches
+  and can take over and hand back; between turns SnapLab runs the same Chrome alone in the workspace, so a site
+  the user signs in to there is signed in for the agent's next turn (`browser_live.py`, `remote_worker.live`,
+  `browser.mjs --live` and `host`). Why: the user can watch the agent and step in for sign-ins and checks that
+  need a person, without the browser leaving the sandbox.
+- The agent's live browser is now a Chrome window on the job's screen by default; `open` and `do` start it when
+  needed. Why: the default was a browser without a window, so the session's screen view stayed black.
+- The browser profile restores its tabs, and kept processes get five seconds to exit after SIGTERM, so cookies and
+  tabs are written. While the user holds control, `browser.mjs open/do` and `desktop.py` input wait (up to 15
+  minutes) and then tell the agent to look again.
+
 ## 2026-11-20 Claude and ChatGPT apps, Google Gemini
 
 - Settings > Advanced settings (closed by default): other API providers, and "AI apps signed in on this PC":

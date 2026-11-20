@@ -381,6 +381,12 @@ class Handler(BaseHTTPRequestHandler):
             self.send_bytes(200, app.store.path("avatars", name).read_bytes(), mime, {"Cache-Control": "no-store"})
         elif path == "/api/events":
             self.events()
+        elif m := re.fullmatch(rf"/api/browser/({ID})", path):
+            ok, why = app.browsers.available(m.group(1))
+            lb = app.browsers.peek(m.group(1))
+            self.send_json(200, {"ok": True, "available": ok, "why": why, "browser": lb.view() if lb else None})
+        elif m := re.fullmatch(rf"/api/browser/({ID})/live", path):
+            self.browser_stream(m.group(1))
         elif m := re.fullmatch(rf"/api/rooms/({ID})/attachments", path):
             if not app.store.room(m.group(1)):
                 self.send_json(404, {"ok": False, "error": "no such room"})
@@ -548,6 +554,51 @@ class Handler(BaseHTTPRequestHandler):
         finally:
             app.bus.unsubscribe(q)
 
+    def browser_stream(self, sid: str):
+        """The browser panel's live stream: the page as JPEG frames (only while someone watches) and its state."""
+        app = self.app
+        cookie = auth.parse_cookies(self.headers.get("Cookie")).get(self.cookie_name())
+        try:
+            lb = app.browsers.get(sid)
+        except ValueError as e:
+            self.send_json(404, {"ok": False, "error": str(e)})
+            return
+        self.close_connection = True
+        self._headers(200, "text/event-stream; charset=utf-8", None,
+                      {"X-Accel-Buffering": "no", "Connection": "close", "Cache-Control": "no-store"})
+        lb.add_viewer()
+        seq = version = 0
+        try:
+            state = lb.view()
+            version = state["version"]
+            self.wfile.write(b"retry: 1500\n\nevent: state\ndata: " + json.dumps(state).encode("utf-8") + b"\n\n")
+            self.wfile.flush()
+            t_end = time.time() + float(app.cfg.get("sse_seconds", 900))
+            checked = time.time()
+            while time.time() < t_end and not app_stopping(app):
+                frame, changed = lb.wait(seq, version, 15)
+                if time.time() - checked > 15:
+                    if not app.auth.device_for(cookie):
+                        break
+                    checked = time.time()
+                out = b""
+                if frame:
+                    seq = frame[0]
+                    size = frame[2]
+                    out += (b'event: frame\ndata: {"seq":%d,"w":%s,"h":%s,"jpeg":"' % (
+                        seq, json.dumps(size.get("w")).encode(), json.dumps(size.get("h")).encode())
+                        + frame[1].encode("ascii", "ignore") + b'"}\n\n')
+                if changed:
+                    state = lb.view()
+                    version = state["version"]
+                    out += b"event: state\ndata: " + json.dumps(state).encode("utf-8") + b"\n\n"
+                self.wfile.write(out or b": ping\n\n")
+                self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError, OSError):
+            pass
+        finally:
+            lb.remove_viewer()
+
     # ------------------------------------------------------------ POST
 
     def do_POST(self):
@@ -682,6 +733,27 @@ class Handler(BaseHTTPRequestHandler):
                 return cli_admin.open_window(app, s("app"), s("step"))
             if action == "add":
                 return cli_admin.add(app, s("app"), s("model"))
+            raise ValueError("unknown action")
+        if m := re.fullmatch(rf"/api/browser/({ID})", path):
+            lb = app.browsers.get(m.group(1))
+            action = s("action")
+            if action == "input":
+                return {"done": lb.input(b.get("events"))}
+            if action == "nav":
+                lb.navigate(s("to"), s("url"))
+                return {}
+            if action == "tab":
+                lb.tab(s("to"), s("tab"), s("url"))
+                return {}
+            if action == "control":
+                lb.control(s("holder"))
+                return {"browser": lb.view()}
+            if action == "dialog":
+                lb.answer_dialog(b.get("accept") is True, s("text"))
+                return {}
+            if action == "close":
+                lb.end(wait=False)
+                return {}
             raise ValueError("unknown action")
         if path == "/api/models":
             from .setup import remove_model, set_default
@@ -926,6 +998,7 @@ def serve_forever(app, host: str, port: int) -> None:
         if app.translator:
             app.translator.stop()
         app.close_mcp()
+        app.browsers.close_all()
         try:
             app.store.path("server.json").unlink()
         except OSError:

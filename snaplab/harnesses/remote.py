@@ -55,7 +55,11 @@ screen is also available as text (visible_text, elements, a11y, text), so use wh
 node .snaplab/browser.mjs drives Chrome through the DevTools protocol: pages, clicks and typing by selector or
 text, console, network, DOM, storage, JavaScript values. It stays open for the whole turn (page and game state
 carry over between commands).
-  node .snaplab/browser.mjs start          a browser without a window (fast checks); --width 1280 --height 800, --mobile, --fresh
+  node .snaplab/browser.mjs start          the live browser: a Chrome window on this job's screen, which the user can
+    watch (and take over) in SnapLab; --headless for one without a window (--width 1280 --height 800, --mobile), --fresh
+  open and do start it by themselves when needed. Its profile keeps sign-ins and tabs between turns: the user may
+  have signed in to a site for you in SnapLab's browser panel. While the user has taken over, open and do wait until
+  they hand it back; then look at the page again before acting.
   node .snaplab/browser.mjs open URL [STEP ...]   URL: a workspace file such as index.html?level=2, http://localhost:PORT/, https://...
   node .snaplab/browser.mjs do STEP [STEP ...]    on the page that is open now; stop closes the browser
   Each open/do saves .snaplab/browser.png (the page) unless --no-shot. x,y in steps are PAGE pixels of browser.png.
@@ -259,7 +263,8 @@ def ssh_command(cfg, local_port, remote_port):
             # Only a worker that has not answered for ten minutes counts as gone. It was 30 s, which a fully busy PC
             # or a slow Wi-Fi link reached while the job was still working (2026-11-17).
             "-o", "ServerAliveInterval=30", "-o", "ServerAliveCountMax=20",
-            "-R", f"127.0.0.1:{remote_port}:127.0.0.1:{local_port}",
+            # The browser panel's connection to a running turn needs no forward (local_port None).
+            *(["-R", f"127.0.0.1:{remote_port}:127.0.0.1:{local_port}"] if local_port is not None else []),
             "-p", str(cfg["ssh_port"]), "-l", cfg["user"], cfg["host"],
             "python3 -u -c " + shlex.quote(bootstrap)]
 
@@ -475,6 +480,21 @@ def apply_download(folder, downloaded, deleted, sent=None):
 
 
 def run_turn(app, session, folder, prompt, ctl, *, _cfg=None):
+    cfg = _cfg if _cfg is not None else settings(app)
+    sid = session["id"]
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,40}", sid):
+        raise ValueError("bad session id")
+    browsers = getattr(app, "browsers", None)
+    if browsers is not None:
+        browsers.before_turn(sid)       # the browser panel's own browser gives the job (and its profile) to the turn
+    try:
+        return _run_turn(app, session, folder, prompt, ctl, cfg, sid)
+    finally:
+        if browsers is not None:
+            browsers.after_turn(sid)
+
+
+def _run_turn(app, session, folder, prompt, ctl, cfg, sid):
     from ..guard import Guard
     from . import adapters
     from .selection import task_kind, completion_error
@@ -482,10 +502,6 @@ def run_turn(app, session, folder, prompt, ctl, *, _cfg=None):
     from ..proxy import Translator
     from ..testparse import parse_tests
     from ..evidence import record_tests
-    cfg = _cfg if _cfg is not None else settings(app)
-    sid = session["id"]
-    if not re.fullmatch(r"[A-Za-z0-9_-]{1,40}", sid):
-        raise ValueError("bad session id")
     manifest = local_manifest(app, sid, folder)
     if ctl.cancelled():
         return TurnResult(ok=False, error="stopped")

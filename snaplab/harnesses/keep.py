@@ -124,7 +124,10 @@ def supervise(cmd: list[str]) -> int:
                 os.killpg(pid, signal.SIGTERM)
             except (OSError, AttributeError):
                 pass
-        time.sleep(0.5)
+        # A browser writes its cookies and open tabs when it gets SIGTERM; give it a few seconds before SIGKILL.
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline and any(_alive(pid) for pid in kept):
+            time.sleep(0.1)
         for pid in kept:
             try:
                 os.killpg(pid, signal.SIGKILL)
@@ -174,12 +177,14 @@ def stop(name: str) -> dict:
     if os.name == "nt":            # the whole tree, like a process group on Linux
         subprocess.run(["taskkill", "/T", "/F", "/PID", str(rec["pid"])], capture_output=True)
     else:
-        for sig in (signal.SIGTERM, signal.SIGKILL):
+        for sig, grace in ((signal.SIGTERM, 5.0), (signal.SIGKILL, 0.5)):
             try:
                 os.killpg(rec["pid"], sig)
             except OSError:
                 break
-            time.sleep(0.5)
+            deadline = time.monotonic() + grace       # a browser saves cookies and tabs on SIGTERM
+            while time.monotonic() < deadline and _alive(rec["pid"]):
+                time.sleep(0.1)
             if not _alive(rec["pid"]):
                 break
     (STATE / f"proc-{name}.json").unlink(missing_ok=True)
