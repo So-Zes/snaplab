@@ -1,13 +1,18 @@
 """Web search and page reading for bots.
 
 Search providers
-- "duckduckgo" (default, no key): the HTML results page of DuckDuckGo.
+- "duckduckgo" (no key): the HTML results page of DuckDuckGo.
 - "brave": Brave Search API, used when BRAVE_API_KEY is set.
 - "tavily": Tavily API, used when TAVILY_API_KEY is set.
-With provider "auto", a configured key wins (Tavily, then Brave), otherwise DuckDuckGo.
+- "tavily-keyless": Tavily's own keyless access (header X-Tavily-Access-Mode: keyless), free and rate-limited
+  per connection.
+With provider "auto" SnapLab tries them in this order and uses the first that answers: Tavily (key), Brave (key),
+DuckDuckGo, Tavily keyless. Free sources are often refused on a connection that shares its public address with
+many people (mobile and 5G home routers); a key of the user's own does not depend on that.
 
-If a search site answers with a human check (CAPTCHA / "are you a robot"), SnapLab stops right there,
-reports it, and pauses that provider for a while. It never tries to get around the check.
+If a search site answers with a human check (CAPTCHA / "are you a robot") or says its free limit is used up,
+SnapLab stops using that site for a while (the site's Retry-After, otherwise cooldown_minutes) and tries the next
+one. It never tries to get around the check. What the site wrote in a refusal is not passed to the model.
 
 read_page(): fetches one http(s) page, text only, with size limits. Private, local and tailnet addresses
 are refused, and so are the PC's own addresses (looked up live, public IPv6 included) with their IPv6 /64, and
@@ -36,10 +41,19 @@ CAPTCHA_MARKERS = ("captcha", "anomaly-modal", "challenge-form", "cf-chl", "are 
 
 
 class SearchError(Exception):
-    def __init__(self, kind: str, message: str):
+    def __init__(self, kind: str, message: str, retry_after: float | None = None):
         super().__init__(message)
-        self.kind = kind          # captcha | http | network | config | blocked
+        self.kind = kind          # captcha | limit | http | network | config | blocked
         self.message = message
+        self.retry_after = retry_after   # seconds the site asked us to wait (limit only)
+
+
+def _retry_after(headers: dict) -> float | None:
+    v = {k.lower(): v for k, v in (headers or {}).items()}.get("retry-after")
+    try:
+        return min(max(float(v), 60.0), 86400.0)
+    except (TypeError, ValueError):
+        return None
 
 
 def looks_like_captcha(status: int, body: str) -> bool:
@@ -288,7 +302,11 @@ def search_duckduckgo(query: str, count: int) -> list[dict]:
 
 def search_brave(query: str, count: int, key: str) -> list[dict]:
     url = "https://api.search.brave.com/res/v1/web/search?" + urllib.parse.urlencode({"q": query, "count": count})
-    status, _, body, _ = _http(url, headers={"Accept": "application/json", "X-Subscription-Token": key})
+    status, hdrs, body, _ = _http(url, headers={"Accept": "application/json", "X-Subscription-Token": key})
+    if status == 429:
+        raise SearchError("limit", "Brave Search says the key's limit is used up for now", _retry_after(hdrs))
+    if status in (401, 403):
+        raise SearchError("http", f"Brave Search refused the API key (HTTP {status})")
     if status != 200:
         raise SearchError("http", f"Brave Search answered HTTP {status}")
     data = json.loads(body.decode("utf-8", "replace"))
@@ -297,15 +315,30 @@ def search_brave(query: str, count: int, key: str) -> list[dict]:
             for r in ((data.get("web") or {}).get("results") or [])[:count]]
 
 
-def search_tavily(query: str, count: int, key: str) -> list[dict]:
+def search_tavily(query: str, count: int, key: str | None) -> list[dict]:
+    """With key=None this is Tavily's keyless access: free, limited per connection (docs.tavily.com, "keyless")."""
     payload = json.dumps({"query": query, "max_results": count}).encode()
-    status, _, body, _ = _http("https://api.tavily.com/search", data=payload,
-                               headers={"Content-Type": "application/json", "Authorization": f"Bearer {key}"})
+    headers = {"Content-Type": "application/json"}
+    if key:
+        headers["Authorization"] = f"Bearer {key}"
+    else:
+        headers["X-Tavily-Access-Mode"] = "keyless"
+    status, hdrs, body, _ = _http("https://api.tavily.com/search", data=payload, headers=headers)
+    if status in (429, 432, 433):
+        # The refusal text offers paid workarounds; it is the site's text, so it is not handed to the model.
+        what = "the key's limit is used up for now" if key else "its free keyless limit is used up for this connection"
+        raise SearchError("limit", f"Tavily says {what}", _retry_after(hdrs))
+    if status in (401, 403) and key:
+        raise SearchError("http", f"Tavily refused the API key (HTTP {status})")
     if status != 200:
         raise SearchError("http", f"Tavily answered HTTP {status}")
     data = json.loads(body.decode("utf-8", "replace"))
     return [{"title": (r.get("title") or "")[:200], "url": (r.get("url") or "")[:500],
              "snippet": (r.get("content") or "")[:400]} for r in (data.get("results") or [])[:count]]
+
+
+LABELS = {"tavily": "Tavily", "brave": "Brave Search", "duckduckgo": "DuckDuckGo", "tavily-keyless": "Tavily (no key)"}
+KEY_ENVS = {"tavily": "TAVILY_API_KEY", "brave": "BRAVE_API_KEY"}
 
 
 class Searcher:
@@ -314,21 +347,54 @@ class Searcher:
         self.cooldown_s = float(cfg.get("cooldown_minutes", 30)) * 60
         self.redactor = redactor
         self.paused_until: dict[str, float] = {}
+        self.pause_kind: dict[str, str] = {}
+        self.last: dict = {}
 
-    def pick(self) -> tuple[str, str | None]:
+    def chain(self) -> list[tuple[str, str | None]]:
+        """The providers to try, in order, with their keys."""
         from .llm import get_api_key
         tav, brave = get_api_key("TAVILY_API_KEY"), get_api_key("BRAVE_API_KEY")
         if self.provider == "tavily":
-            return "tavily", tav
+            return [("tavily", tav)]
         if self.provider == "brave":
-            return "brave", brave
-        if self.provider == "duckduckgo":
-            return "duckduckgo", None
+            return [("brave", brave)]
+        if self.provider in ("duckduckgo", "tavily-keyless"):
+            return [(self.provider, None)]
+        out = []
         if tav:
-            return "tavily", tav
+            out.append(("tavily", tav))
         if brave:
-            return "brave", brave
-        return "duckduckgo", None
+            out.append(("brave", brave))
+        return out + [("duckduckgo", None), ("tavily-keyless", None)]
+
+    def pick(self) -> tuple[str, str | None]:
+        return self.chain()[0]
+
+    def paused_minutes(self, chain=None) -> int:
+        """0 when some provider in the chain can be tried now, otherwise minutes until the first one can."""
+        now = time.time()
+        waits = [self.paused_until.get(name, 0) for name, _ in (chain or self.chain())]
+        return 0 if any(w <= now for w in waits) else int((min(waits) - now) / 60) + 1
+
+    def view(self) -> dict:
+        chain = self.chain()
+        now = time.time()
+
+        def mins(n):
+            until = self.paused_until.get(n, 0)
+            return int((until - now) / 60) + 1 if until > now else 0
+        return {"mode": self.provider, "keys": {p: any(n == p and k for n, k in chain) for p in KEY_ENVS},
+                "order": [{"name": n, "label": LABELS[n], "paused_minutes": mins(n)} for n, _ in chain],
+                "paused_minutes": self.paused_minutes(chain), "last": self.last}
+
+    def run(self, name: str, query: str, count: int, key: str | None) -> list[dict]:
+        if name == "tavily":
+            return search_tavily(query, count, key)
+        if name == "tavily-keyless":
+            return search_tavily(query, count, None)
+        if name == "brave":
+            return search_brave(query, count, key)
+        return search_duckduckgo(query, count)
 
     def search(self, query: str, count: int = 5) -> dict:
         query = " ".join((query or "").split())[:300]
@@ -337,43 +403,67 @@ class Searcher:
         if self.redactor:
             query = self.redactor.clean(query)
         count = max(1, min(int(count or 5), 10))
-        name, key = self.pick()
-        if name in ("brave", "tavily") and not key:
-            raise SearchError("config", f"{name} is selected but its API key environment variable is not set")
-        until = self.paused_until.get(name, 0)
-        if until > time.time():
-            mins = int((until - time.time()) / 60) + 1
-            raise SearchError("captcha", f"{name} asked for a human check earlier; search is paused for about {mins} more minutes")
-        try:
-            if name == "tavily":
-                results = search_tavily(query, count, key)
-            elif name == "brave":
-                results = search_brave(query, count, key)
-            else:
-                results = search_duckduckgo(query, count)
-        except SearchError as e:
-            if e.kind == "captcha":
-                self.paused_until[name] = time.time() + self.cooldown_s
-            raise
-        return {"provider": name, "query": query, "results": results}
+        chain = self.chain()
+        if len(chain) == 1 and chain[0][0] in KEY_ENVS and not chain[0][1]:
+            raise SearchError("config", f"{chain[0][0]} is selected but its API key is not set (Settings > Web search)")
+        notes, stopped, other = [], False, None
+        for name, key in chain:
+            label = LABELS[name]
+            until = self.paused_until.get(name, 0)
+            if until > time.time():
+                mins = int((until - time.time()) / 60) + 1
+                why = "asked for a human check" if self.pause_kind.get(name) == "captcha" else "said its limit was used up"
+                notes.append(f"{label} {why} earlier and is paused for about {mins} more minutes")
+                stopped = True
+                continue
+            try:
+                results = self.run(name, query, count, key)
+            except SearchError as e:
+                if e.kind in ("captcha", "limit"):
+                    self.paused_until[name] = time.time() + (e.retry_after or self.cooldown_s)
+                    self.pause_kind[name] = e.kind
+                    stopped = True
+                else:
+                    other = e
+                notes.append(e.message if e.message.startswith(label.split()[0]) else f"{label}: {e.message}")
+                continue
+            self.last = {"provider": name, "at": time.time()}
+            out = {"provider": name, "query": query, "results": results}
+            if notes:
+                out["skipped"] = notes
+            return out
+        msg = "; ".join(notes) + "."
+        if stopped:
+            msg += f" Web search can be tried again in about {self.paused_minutes(chain)} minutes."
+        if not any(k for _, k in chain):
+            msg += (" These free sources refuse searches more often on a connection that shares its public address"
+                    " with many people. With a Tavily or Brave Search API key (Settings > Web search) search does not"
+                    " depend on them.")
+        raise SearchError("captcha" if stopped else (other.kind if other else "network"), msg)
 
 
 # ------------------------------------------------------------------ reading pages
 
-def host_is_public(host: str) -> bool:
-    """True only if every address the host resolves to is a public internet address."""
+def host_status(host: str) -> str:
+    """"public" when every address the host resolves to is a public internet address, "unknown" when the name
+    does not resolve at all (no such site, or DNS failed), otherwise "local"."""
     if not host or host.lower() in ("localhost",) or host.lower().endswith((".local", ".localhost", ".internal", ".ts.net", ".lan", ".home.arpa")):
-        return False
+        return "local"
     try:
         infos = socket.getaddrinfo(host, None)
     except OSError:
-        return False
+        return "unknown"
     if not infos:
-        return False
+        return "unknown"
     for info in infos:
         if not ip_is_public(info[4][0]):
-            return False
-    return True
+            return "local"
+    return "public"
+
+
+def host_is_public(host: str) -> bool:
+    """True only if every address the host resolves to is a public internet address."""
+    return host_status(host) == "public"
 
 
 class _TextParser(HTMLParser):
@@ -446,6 +536,8 @@ def read_page(url: str, *, max_bytes: int = 1_500_000, max_chars: int = 12000, r
         if p.username or p.password:
             raise SearchError("blocked", "URLs with a user name or password are not allowed")
         if not resolver(p.hostname or ""):
+            if resolver is host_is_public and host_status(p.hostname or "") == "unknown":
+                raise SearchError("network", f"{p.hostname} was not found: no such site, or the name could not be looked up")
             raise SearchError("blocked", "this address is local, private or on the tailnet; SnapLab only reads public pages")
         status, headers, body, _ = _http(url, headers={"Accept": "text/html,text/plain;q=0.9,*/*;q=0.1"},
                                          max_bytes=max_bytes)

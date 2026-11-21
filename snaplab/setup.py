@@ -217,6 +217,30 @@ def remove_model(app, name):
         return result
 
 
+def search_key(app, body):
+    """Settings > Web search: test a Tavily or Brave Search key with one search, then keep it in this computer's
+    credential store under TAVILY_API_KEY / BRAVE_API_KEY, the names websearch reads. "remove" deletes it again."""
+    from .websearch import KEY_ENVS, SearchError, search_brave, search_tavily
+    provider = str(body.get("provider") or "")
+    if provider not in KEY_ENVS:
+        raise ValueError("Choose Tavily or Brave Search.")
+    if str(body.get("action") or "save") == "remove":
+        credentials.delete_credential(KEY_ENVS[provider])
+        return {"search": app.searcher.view()}
+    key = str(body.get("key") or "").strip()
+    if not key or len(key) > 400 or any(c.isspace() for c in key):
+        raise ValueError("Paste the API key.")
+    app.guard.add(key)
+    try:
+        (search_tavily if provider == "tavily" else search_brave)("SnapLab connection test", 1, key)
+    except SearchError as e:
+        if e.kind != "limit":                    # a key that is at its limit for now is still a working key
+            raise ValueError(e.message) from None
+    credentials.write_credential(KEY_ENVS[provider], key)
+    app.searcher.paused_until.pop(provider, None)
+    return {"search": app.searcher.view()}
+
+
 def context_limit(body):
     try:
         value = int(body.get("context_limit") or 32768)

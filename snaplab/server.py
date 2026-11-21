@@ -731,6 +731,9 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/providers":
             from .setup import configure
             return configure(app, b, add=True)
+        if path == "/api/search":
+            from .setup import search_key
+            return search_key(app, b)
         if path == "/api/cli":
             from . import cli_admin
             action = str(b.get("action") or "")

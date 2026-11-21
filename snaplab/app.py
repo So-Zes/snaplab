@@ -258,9 +258,13 @@ class App:
                 items.append({"id": "translator", "state": "bad", "code": "error"})
             else:
                 items.append({"id": "translator", "state": "ok", "code": "ok"})
-        paused = {k: v for k, v in (getattr(self.searcher, "paused_until", None) or {}).items() if v > __import__("time").time()}
-        items.append({"id": "search", "state": "warn" if paused else "ok", "code": "paused" if paused else "ok",
-                      "minutes": int((max(paused.values()) - __import__("time").time()) / 60) + 1 if paused else 0})
+        if hasattr(self.searcher, "paused_minutes"):     # paused only when every search source is paused
+            minutes = self.searcher.paused_minutes()
+        else:
+            paused = {k: v for k, v in (getattr(self.searcher, "paused_until", None) or {}).items() if v > __import__("time").time()}
+            minutes = int((max(paused.values()) - __import__("time").time()) / 60) + 1 if paused else 0
+        items.append({"id": "search", "state": "warn" if minutes else "ok", "code": "paused" if minutes else "ok",
+                      "minutes": minutes})
         running = sum(1 for s in self.store.sessions() if s.get("status") == "running")
         items.append({"id": "sessions", "state": "ok", "running": running})
         level = "bad" if any(i["state"] == "bad" for i in items) else "warn" if any(i["state"] == "warn" for i in items) else "ok"
@@ -1169,6 +1173,7 @@ class App:
             "harnesses": self.sessions.harness_info(), "dashboard": st.dashboard(), "usage": self.usage_view(),
             "activity": st.recent_activity(25), "tasks": [self.tasks.view(t) for t in self.tasks.all()], "status": self.status(), "background": self.background_view(), "tones": list(prompts.TONES) + ["custom"], "palette": PALETTE,
             "models": self.models.view(), "routing": self.cfg["routing"],
+            "search": self.searcher.view() if hasattr(self.searcher, "view") else None,
             "tool_labels": {n: p.label for n, p in self.plugin_tools.items() if p.label},
             "push": {"public_key": self.push.public_key_b64(), "devices": len(self.push.subscriptions())},
             "device": {"id": (device or {}).get("id"), "label": (device or {}).get("label")},

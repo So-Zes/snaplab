@@ -61,6 +61,8 @@ flowchart LR
 - `slots.py`: how many model calls may run at once (file locks).
 - `mcp_client.py`, `web_mcp.py`, `plugins.py`, `websearch.py`: external MCP servers as tools (Streamable HTTP and
   stdio), the MCP server that gives SnapCode its web and MCP tools, single-file tool plugins, and web search.
+  Web search tries Tavily (key), Brave (key), DuckDuckGo, then Tavily keyless, and pauses a source that refuses;
+  keys are entered in Settings > Web search (`setup.search_key`, credential names `TAVILY_API_KEY` / `BRAVE_API_KEY`).
 - `mcp_admin.py`: MCP servers added in Settings (`data/mcp_servers.json`, secrets in the OS credential store);
   each is tested before it is saved, and `app.reload_mcp()` applies changes without a restart.
 

@@ -259,7 +259,7 @@
     S.questions = j.questions; S.harnesses = j.harnesses; S.dashboard = j.dashboard; S.usage = j.usage; S.activity = j.activity;
     S.push = j.push; S.device = j.device; S.version = j.version; S.palette = j.palette; S.tones = j.tones;
     S.models = j.models || []; S.routing = j.routing || {}; S.toolLabels = j.tool_labels || {}; S.status = j.status || S.status;
-    S.background = j.background || null; S.tasks = j.tasks || [];
+    S.background = j.background || null; S.tasks = j.tasks || []; S.search = j.search || null;
     S.formerBots = j.former_bots || [];
     S.archivedBots = j.archived_bots || [];
     S.busy = new Set(j.busy_rooms || []);
@@ -3283,6 +3283,7 @@
       h("div", { class: "card form" }, h("h3", { class: "card-h" }, icon("sail"), t("settings.install")), h("p", { class: "hint" }, t("settings.install.body")), installBtn()),
       modelsCard(),
       mcpCard(),
+      searchCard(),
       backgroundCard(),
       advancedCard(),
       h("div", { class: "card form privacy" }, icon("shield"), h("p", {}, t("settings.privacy"))),
@@ -3381,6 +3382,39 @@
     const m=(S.models || []).find(x=>x.name===(ref || (S.routing || {})[kind]));
     // Snapscribe shows only its product name ("Snapscribe 1"), so the model behind it can change.
     return m ? (m.kind === "snapscribe" ? m.label : m.model + " · " + (m.provider_label || m.provider)) : (ref || "");
+  }
+
+  // Settings > Web search: which sources bots use now, and a Tavily or Brave Search key of the user's own.
+  function searchCard() {
+    const sv = S.search;
+    if (!sv) return null;
+    const order = sv.order || [];
+    const using = order.find((o) => !o.paused_minutes);
+    const name = (p) => (p === "tavily" ? "Tavily" : "Brave Search");
+    const label = (o) => (o.name === "tavily-keyless" ? t("settings.search.keyless") : o.label);
+    const rows = order.map((o) => h("div", { class: "kv" }, h("span", {}, label(o)),
+      h("span", { class: "tag " + (o.paused_minutes ? "bad" : o === using ? "good" : "") },
+        o.paused_minutes ? t("settings.search.paused", { n: o.paused_minutes }) : t(o === using ? "settings.search.using" : "settings.search.next"))));
+    const sel = h("select", { class: "input", "aria-label": t("settings.search.provider") },
+      h("option", { value: "tavily" }, "Tavily"), h("option", { value: "brave" }, "Brave Search"));
+    const key = h("input", { class: "input", type: "password", autocomplete: "off", spellcheck: "false", placeholder: t("settings.search.ph") });
+    const save = h("button", { class: "btn", type: "button", onclick: async () => {
+      if (!key.value.trim()) { key.focus(); return; }
+      save.disabled = true;
+      try { const j = await api("/api/search", { action: "save", provider: sel.value, key: key.value }); S.search = j.search; key.value = ""; render(); toast(t("settings.search.saved", { name: name(sel.value) })); }
+      catch (e) { toast(t("settings.search.bad", { why: (e && e.message) || "" }), "bad"); } finally { save.disabled = false; }
+    } }, icon("check"), t("settings.search.save"));
+    const removes = ["tavily", "brave"].filter((p) => (sv.keys || {})[p]).map((p) => h("button", { class: "btn ghost small", type: "button", onclick: async () => {
+      if (!(await confirmSheet(t("settings.search.remove.title", { name: name(p) }), t("settings.search.remove.body"), t("settings.models.remove")))) return;
+      try { const j = await api("/api/search", { action: "remove", provider: p }); S.search = j.search; render(); } catch (e) { fail(e); }
+    } }, icon("trash"), t("settings.search.remove", { name: name(p) })));
+    const hasKey = (sv.keys || {}).tavily || (sv.keys || {}).brave;
+    return h("div", { class: "card form search-card" }, h("h3", { class: "card-h" }, icon("search"), t("settings.search")),
+      h("div", { class: "search-order" }, rows),
+      h("p", { class: "hint" }, h("span", {}, t(hasKey ? "settings.search.haskey" : "settings.search.nokey"), " ",
+        h("a", { href: "https://app.tavily.com", target: "_blank", rel: "noopener" }, "app.tavily.com"))),
+      h("div", { class: "search-key" }, sel, key), save,
+      removes.length ? h("div", { class: "model-actions" }, removes) : null);
   }
 
   function modelsCard() {

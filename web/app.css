@@ -1511,3 +1511,9 @@ button.ubar:focus-visible { outline: 2px solid var(--chart); outline-offset: 1px
   color: inherit; text-align: left; padding: 6px 0; cursor: pointer; }
 .bp-tabmain b, .bp-tabmain .muted { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .bp-dialog-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* Settings > Web search */
+.search-order { display: grid; gap: 6px; }
+.search-key { display: flex; gap: 8px; flex-wrap: wrap; }
+.search-key select { flex: 0 0 auto; width: auto; }
+.search-key input { flex: 1 1 180px; min-width: 0; }

@@ -2,6 +2,24 @@
 
 Newest first. Each entry: the date, what changed, and why.
 
+## 2026-11-21 Web search: sources tried in order, a search key in Settings
+
+- With `search.provider` `auto`, `websearch.Searcher` tries Tavily (key), Brave Search (key), DuckDuckGo and then
+  Tavily's keyless access (`X-Tavily-Access-Mode: keyless`, offered by Tavily for agents) and uses the first that
+  answers. A source that answers with a human check or a used-up limit is paused for its `Retry-After` (otherwise
+  `cooldown_minutes`) and the next one is tried; when all are paused the bot is told when search comes back and
+  that a key avoids it. The text of a refusal (it offers paid workarounds) is not passed to the model.
+- Settings > Web search (`searchCard`, `POST /api/search`, `setup.search_key`) shows the sources and which is in
+  use or paused, and takes a Tavily or Brave Search key: it is tested with one search, then kept in the OS
+  credential store as `TAVILY_API_KEY` / `BRAVE_API_KEY` and added to the redaction list. It can be removed again.
+- The status item for search is "paused" only when every source is paused.
+- `read_page` says a name that does not resolve was not found, instead of calling it local, private or tailnet.
+
+Why: on a PC whose connection shares one public address with many people (mobile and 5G home routers),
+DuckDuckGo answered every search with a human check and Tavily's keyless access was already at its daily limit,
+so bots could not search at all. A key of the user's own (Tavily: 1,000 searches a month free, no card) does not
+depend on the connection, and before this there was no place in the app to enter one.
+
 ## 2026-11-21 Installer: removing an installation removes only the workspace it created
 
 - Setup records in `~\.snaplab\workspace-<name>.txt` whether it created the WSL distribution, found it already

@@ -525,6 +525,8 @@ class Toolbox:
             raise
         self.mark_web_read("web_search")
         lines = [f"Search results from {out['provider']} for: {out['query']}"]
+        if out.get("skipped"):
+            lines.append("(skipped: " + "; ".join(out["skipped"]) + ")")
         for i, r in enumerate(out["results"], 1):
             lines.append(f"{i}. {r['title']}\n   {r['url']}\n   {r['snippet']}")
         if not out["results"]:
