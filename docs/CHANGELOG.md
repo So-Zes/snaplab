@@ -2,6 +2,18 @@
 
 Newest first. Each entry: the date, what changed, and why.
 
+## 2026-11-22 Version 1.1.4
+
+- Version 1.1.4: a project's `data/`, `runtime/` and `config.json` now move between the PC and the worker.
+
+## 2026-11-22 Project data folders come back from the worker
+
+- `remote_worker.SKIP` no longer contains `data`, `runtime` and `config.json`. They had been added with the SSH
+  worker to keep SnapLab's own private folders out of it, so a project's own data folder or config file never
+  came back from SnapCode. Credentials (`.ssh`, `.aws`, `.config`, `.env*`, `credentials*`, `auth.json`, `.npmrc`,
+  `.netrc` and the like) are still neither sent nor returned, and files that hold a secret or a private term are
+  still stopped by their content.
+
 ## 2026-11-21 Version 1.1.3
 
 - Version 1.1.3: the rules, caps and timeouts that had been added without the owner asking are gone (all below).

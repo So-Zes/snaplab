@@ -165,15 +165,21 @@ class ExportSecurityTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             remote.checked_upload(self.app, self.folder, "input.txt", remote.secret_bytes(self.app.guard))
 
-    def test_credentials_and_runtime_are_excluded(self):
-        for name in (".npmrc", ".netrc", "config.json", "auth.json", ".config/token", "data/chat.json", "runtime/log.txt"):
+    def test_credentials_are_excluded_but_project_data_is_sent(self):
+        for name in (".npmrc", ".netrc", "auth.json", ".config/token", "credentials.json", ".env.local"):
             p = self.folder / name
             p.parent.mkdir(parents=True, exist_ok=True)
             p.write_text("synthetic-credential")
+        for name in ("config.json", "data/levels.json", "runtime/cache.txt"):
+            p = self.folder / name
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text("project-file")
         forms = remote.secret_bytes(self.app.guard)
         sent = {n: remote.checked_upload(self.app, self.folder, n, forms)
                 for n in remote.local_manifest(self.app, self.session["id"], self.folder)}
         self.assertFalse(any(b"synthetic-credential" in raw for raw in sent.values()))
+        for name in ("config.json", "data/levels.json", "runtime/cache.txt"):
+            self.assertIn(name, sent)
 
     def test_outgoing_prose_is_redacted(self):
         self.app.redactor.add_term("private-owner-canary")

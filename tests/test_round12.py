@@ -268,26 +268,30 @@ class RemoteTest(unittest.TestCase):
                 remote.apply_download(self.folder, batch, {})
         self.assertFalse((self.folder / "a").exists())
 
-    def test_game_source_data_transfers_without_private_runtime_data(self):
-        allowed = "src/data/enemies.json"
-        self.assertEqual(files.file_name(allowed), allowed)
-        paths = [allowed, "data/messages.json", "runtime/state.json", "other/data/private.json",
-                 "src/data/auth.json", "src/data/.env", "src/data/nested/config.json"]
-        for name in paths:
+    def test_data_runtime_and_config_transfer_but_credentials_do_not(self):
+        # 2026-11-22: a project's data/, runtime/ and config.json come back from the worker; credentials do not.
+        allowed = ["src/data/enemies.json", "data/messages.json", "runtime/state.json", "other/data/private.json",
+                   "src/data/nested/config.json", "config.json"]
+        refused = ["src/data/auth.json", "src/data/.env", ".ssh/id_ed25519", "credentials.json", ".config/gh/hosts.yml"]
+        for name in allowed + refused:
             path = self.folder / name
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text("{}", encoding="utf-8")
         inventory = files.inventory(self.folder)
-        self.assertIn(allowed, inventory)
-        for name in paths[1:]:
+        for name in allowed:
+            with self.subTest(name=name):
+                self.assertEqual(files.file_name(name), name)
+                self.assertIn(name, inventory)
+        for name in refused:
             with self.subTest(name=name):
                 self.assertNotIn(name, inventory)
                 with self.assertRaises(ValueError):
                     files.file_name(name)
         uploaded = remote.local_manifest(self.app, self.session["id"], self.folder)
-        self.assertIn(allowed, uploaded)
-        files.write_file(self.folder, allowed, b"[]")
-        self.assertEqual(files.read_file(self.folder, allowed), b"[]")
+        for name in allowed:
+            self.assertIn(name, uploaded)
+            files.write_file(self.folder, name, b"[]")
+            self.assertEqual(files.read_file(self.folder, name), b"[]")
 
     def test_linux_browser_discovery(self):
         native_path = type(self.folder)

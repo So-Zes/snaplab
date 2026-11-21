@@ -28,15 +28,16 @@ MAX_LINE = (MAX_FILE * 4 // 3) + 65536
 SKIP = {".git", ".codex", ".pi", ".ssh", ".aws", ".worktrees", "node_modules", "__pycache__",
         ".venv", "venv", ".pytest_cache", ".mypy_cache", ".npmrc", ".netrc", "_netrc",
         ".pypirc", ".git-credentials", ".config", ".azure", ".kube", ".gnupg",
-        "config.json", "auth.json", "credentials", "credentials.json", "data", "runtime"}
+        "auth.json", "credentials", "credentials.json"}
+# data/, runtime/ and config.json were also skipped until 2026-11-22 (meant for SnapLab's own private folders), so a
+# project's own data folder or config file never came back from the worker. Content checks still stop files that
+# hold a secret or a private term (remote.checked_upload, apply_download).
 META = {"PLAN.md", "KNOWLEDGE.md", "attachments.json"}
 
 
 def skipped_component(parts, index):
     part = parts[index].lower()
-    # Game assets are allowed only under this explicit source directory.
-    source_data = index == 1 and parts[0].lower() == "src" and part == "data"
-    return (part in SKIP and not source_data) or part.startswith(".env") or part == "state.md"
+    return part in SKIP or part.startswith(".env") or part == "state.md"
 
 
 def file_name(name):
