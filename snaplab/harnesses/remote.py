@@ -672,6 +672,9 @@ def _run_turn(app, session, folder, prompt, ctl, cfg, sid):
                 if not isinstance(paths, list):
                     raise ValueError("invalid deletion list")
                 deleted = [files.file_name(n) for n in paths]
+            elif kind == 'linked':
+                names = [clean(str(p))[:200] for p in (item.get('paths') or [])[:50]]
+                ctl.emit({'kind': 'note', 'text': 'Linked folders stay on the worker and are not returned: ' + ', '.join(names)})
             elif kind == 'recovery':
                 name = item.get('name', '')
                 if re.fullmatch(re.escape(sid) + r'-recovery-[A-Za-z0-9_-]+', name):

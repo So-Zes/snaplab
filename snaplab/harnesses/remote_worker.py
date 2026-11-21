@@ -103,17 +103,25 @@ def write_file(root, name, raw):
             os.unlink(tmp)
 
 
-def inventory(root):
+def inventory(root, linked=None):
+    """The transferable files of a workspace. A linked directory (a symlink or junction) is not entered and nothing
+    in it is transferred; its path is added to `linked` when a list is given. 2026-11-21: a cloned repository with
+    one symlinked folder (The Graph's packages/contracts-test/contracts) used to stop every turn of its session."""
     names = []
     for here, dirs, files in os.walk(root, followlinks=False):
         parts = Path(here).relative_to(root).parts
         dirs[:] = sorted(d for d in dirs if not skipped_component((*parts, d), len(parts)))
         if Path(here).relative_to(root).parts[:1] == (".snaplab",):
             dirs[:] = []
+        keep = []
         for d in dirs:
             p = Path(here, d)
             if p.is_symlink() or getattr(p.lstat(), "st_file_attributes", 0) & 0x400:
-                raise ValueError("linked workspace directory")
+                if linked is not None:
+                    linked.append(p.relative_to(root).as_posix())
+                continue
+            keep.append(d)
+        dirs[:] = keep
         for name in sorted(files):
             rel = Path(here, name).relative_to(root).as_posix()
             try:
@@ -169,10 +177,16 @@ def read_regular(root, name):
         return stream.read()
 
 
-def write_own(root, name, raw, made):
+def through_link(name, linked):
+    return any(name == d or name.startswith(d + '/') for d in linked)
+
+
+def write_own(root, name, raw, made, linked=()):
     """Write a file into the job's own folder during sync: no other process writes there then (the job lock is
-    held), and inventory() found no linked directory in it. The new file replaces the name atomically, and a link
-    in the last part is replaced, never followed."""
+    held), and the path does not pass through a linked directory that inventory() found. The new file replaces the
+    name atomically, and a link in the last part is replaced, never followed."""
+    if through_link(name, linked):
+        raise ValueError('linked transfer path: ' + name)
     path = root.joinpath(*file_name(name).split('/'))
     if path.parent not in made:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -213,12 +227,12 @@ def save_cache(home, sid, cache):
     os.replace(tmp, folder / f'{sid}.json')
 
 
-def manifest(root, cache):
+def manifest(root, cache, linked=None):
     """path -> SHA-256 for every transferable file. A file whose size, times and inode match the cache is not read
     again; the change time (ctime) cannot be set by a program, so a rewritten file is always read."""
     out, fresh = {}, {}
     now = time.time_ns()
-    for name in inventory(root):
+    for name in inventory(root, linked):
         try:
             info = root.joinpath(*name.split('/')).lstat()
         except OSError:
@@ -273,7 +287,8 @@ def sync(req, folder, home):
         file_name(name)
         if not isinstance(digest, str) or not DIGEST.fullmatch(digest):
             raise ValueError('invalid manifest')
-    current, cache = manifest(folder, load_cache(home, sid))
+    linked = []
+    current, cache = manifest(folder, load_cache(home, sid), linked)
     # Preserve the files of a disconnected or stopped turn that never reached the home PC before replacing them.
     # The recovery directory is outside every job mount and never uploaded as context.
     lost = [n for n in current if wanted.get(n) != current[n]]
@@ -314,7 +329,7 @@ def sync(req, folder, home):
                 safe_path(folder, name).unlink()
                 remove_empty_parents(folder, name)
         for name, tmp in staged.items():
-            write_own(folder, name, tmp.read_bytes(), made)
+            write_own(folder, name, tmp.read_bytes(), made, linked)
     finally:
         shutil.rmtree(stage, ignore_errors=True)
     need = sorted(n for n in missing if n not in staged)
@@ -333,7 +348,7 @@ def sync(req, folder, home):
         raw = base64.b64decode(item['data'], validate=True)
         if hashlib.sha256(raw).hexdigest() != wanted[name]:
             raise ValueError('upload does not match its manifest')
-        write_own(folder, name, raw, made)
+        write_own(folder, name, raw, made, linked)
         pending.discard(name)
     if pending:
         raise ValueError('incomplete upload')
@@ -718,8 +733,11 @@ def run(req, folder, home):
         watcher.join(timeout=1)
         return 1
     # Return only what differs from the home PC's copy, and the names of the files that are gone.
-    final, cache = manifest(folder, cache)
+    linked = []
+    final, cache = manifest(folder, cache, linked)
     save_cache(home, req['sid'], cache)
+    if linked:
+        emit({"kind": "linked", "paths": sorted(linked)[:50]})
     total = 0
     for name in sorted(final):
         if wanted.get(name) == final[name]:

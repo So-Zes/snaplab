@@ -2,6 +2,17 @@
 
 Newest first. Each entry: the date, what changed, and why.
 
+## 2026-11-21 SnapCode: a linked folder in the workspace is skipped, not fatal
+
+- `remote_worker.inventory()` no longer raises "linked workspace directory": a linked folder (symlink or junction)
+  is not entered, nothing in it is returned to the PC, and its name is collected. At the end of a turn the worker
+  sends the names (`linked`) and the PC notes in the session that they stay on the worker. Sync still refuses to
+  write through a linked folder (`write_own`, `through_link`), so nothing is written to a link's target.
+
+Why: a bot cloned a repository with one symlinked folder (`packages/contracts-test/contracts`), and every turn of
+that session failed with "SSH job or file return failed". Checked on the real workspace (6,994 files): the new
+inventory skipped the one linked folder and finished in 0.4 s.
+
 ## 2026-11-21 Web search: RustXNG as the last source
 
 - `rustxng.py`: RustXNG (github.com/RustXNG/RustXNG, a Rust rewrite of SearXNG, AGPL-3.0) can be installed from
