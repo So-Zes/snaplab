@@ -2,6 +2,14 @@
 
 Newest first. Each entry: the date, what changed, and why.
 
+## 2026-11-21 Version 1.1.1
+
+- Version 1.1.1: web search tries its sources in order and takes a Tavily or Brave Search key in Settings, RustXNG
+  can be installed as a last source that never refuses, SnapCode no longer stops on a linked folder in its
+  workspace, and removing an installation removes only the WSL workspace it created (all below, since 1.1.0).
+  Running the installer again updates an existing install. Why: on connections that share one public address with
+  many people, bots could not search at all.
+
 ## 2026-11-21 SnapCode: a linked folder in the workspace is skipped, not fatal
 
 - `remote_worker.inventory()` no longer raises "linked workspace directory": a linked folder (symlink or junction)
