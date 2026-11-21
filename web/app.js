@@ -259,7 +259,7 @@
     S.questions = j.questions; S.harnesses = j.harnesses; S.dashboard = j.dashboard; S.usage = j.usage; S.activity = j.activity;
     S.push = j.push; S.device = j.device; S.version = j.version; S.palette = j.palette; S.tones = j.tones;
     S.models = j.models || []; S.routing = j.routing || {}; S.toolLabels = j.tool_labels || {}; S.status = j.status || S.status;
-    S.background = j.background || null; S.tasks = j.tasks || []; S.search = j.search || null;
+    S.background = j.background || null; S.tasks = j.tasks || []; S.search = j.search || null; S.decisionWatch = j.decision_watch || null;
     S.formerBots = j.former_bots || [];
     S.archivedBots = j.archived_bots || [];
     S.busy = new Set(j.busy_rooms || []);
@@ -3290,6 +3290,7 @@
       searchCard(),
       backgroundCard(),
       advancedCard(),
+      watchCard(),
       h("div", { class: "card form privacy" }, icon("shield"), h("p", {}, t("settings.privacy"))),
       h("div", { class: "card form about" }, h("h3", { class: "card-h" }, t("settings.about")),
         h("div", { class: "kv" }, h("span", {}, t("settings.version")), h("code", {}, "SnapLab " + S.version)),
@@ -3498,6 +3499,24 @@
       try { await navigator.clipboard.writeText(text); toast(t("common.copied")); }
       catch (err) { const r = document.createRange(); r.selectNodeContents(code); const s = getSelection(); s.removeAllRanges(); s.addRange(r); }
     } }, t("common.copy"));
+  }
+
+  // Settings > Experiments: a decision model watches work that shows no progress and wakes a bot (decision_watch.py).
+  function watchCard() {
+    const w = S.decisionWatch;
+    if (!w) return null;
+    const cb = h("input", { type: "checkbox", checked: !!w.enabled, onchange: async () => {
+      try { const j = await api("/api/decision-watch", { enabled: cb.checked }); S.decisionWatch = j.decision_watch; render(); }
+      catch (e) { fail(e); cb.checked = !cb.checked; }
+    } });
+    const facts = [t("settings.watch.model", { model: w.model, minutes: w.quiet_minutes })];
+    if (w.enabled) facts.push(t("settings.watch.stats", { checks: w.checks, asked: w.asked, woke: w.woke, cost: Number(w.cost_usd || 0).toFixed(4) }));
+    return h("div", { class: "card form" }, h("h3", { class: "card-h" }, icon("spark"), t("settings.watch")),
+      h("label", { class: "toggle-row" }, h("span", {}, t("settings.watch.on")), h("span", { class: "switch" }, cb, h("span", { class: "knob" }))),
+      h("p", { class: "hint" }, t("settings.watch.about")),
+      facts.map((x) => h("p", { class: "hint" }, x)),
+      !w.key_set ? h("p", { class: "hint bad-text" }, t("settings.watch.nokey", { env: w.key_env })) : null,
+      w.last_error ? h("p", { class: "hint bad-text" }, t("settings.watch.error", { why: w.last_error })) : null);
   }
 
   function advancedCard() {

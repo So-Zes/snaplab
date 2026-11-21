@@ -142,6 +142,8 @@ class App:
         self.attachments = Attachments(self)
         from .tasks import Scheduler
         self.tasks = Scheduler(self)
+        from .decision_watch import DecisionWatch          # experimental; off unless switched on
+        self.decision_watch = DecisionWatch(self)
         from .ledger import StateLedger
         from .facts import MemoryFacts
         self.ledger = StateLedger(self)
@@ -1165,6 +1167,14 @@ class App:
             cache[s.get("id")] = (key, dict(out))
         return out
 
+    def watch_view(self) -> dict | None:
+        """Settings > Advanced > Experiments. A failure here must not keep the app from opening."""
+        try:
+            return self.decision_watch.view()
+        except Exception as e:  # noqa: BLE001
+            self.log(f"decision watch view failed: {type(e).__name__}: {e}")
+            return None
+
     def search_view(self) -> dict | None:
         """Settings > Web search. A failure here must not keep the app from opening."""
         try:
@@ -1189,6 +1199,7 @@ class App:
             "activity": st.recent_activity(25), "tasks": [self.tasks.view(t) for t in self.tasks.all()], "status": self.status(), "background": self.background_view(), "tones": list(prompts.TONES) + ["custom"], "palette": PALETTE,
             "models": self.models.view(), "routing": self.cfg["routing"],
             "search": self.search_view(),
+            "decision_watch": self.watch_view(),
             "tool_labels": {n: p.label for n, p in self.plugin_tools.items() if p.label},
             "push": {"public_key": self.push.public_key_b64(), "devices": len(self.push.subscriptions())},
             "device": {"id": (device or {}).get("id"), "label": (device or {}).get("label")},

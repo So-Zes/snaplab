@@ -70,7 +70,7 @@ assert.ok(source.includes("  start();\n})();"));
 source = source.replace("  start();\n})();", `
   globalThis.ui = { S, api, avatar, avatarPicker, cropAvatar, applyTheme, recommendedFace,
     sheet, activeSheets, membersSheet, renderChats, parseRoute, TABS, homeAgenda, needsCount, pinButton, profileSheet, onEvent,
-    projectPicker, pickProjectSheet, messageEl, questionCard, needsSheet, longPress, botMenu, archiveBot, restoreBot, freshCard, memoryCard, searchCard,
+    projectPicker, pickProjectSheet, messageEl, questionCard, needsSheet, longPress, botMenu, archiveBot, restoreBot, freshCard, memoryCard, searchCard, watchCard,
     bots: () => { let body; screen = (_, b) => { body = b; }; renderBots(); return body; },
     buildComposer, drafts, keepDraft, sendDraft, columnChart, usageBuckets, U,
     chats: () => { let body; screen = (_, b) => { body = b; }; renderChats(); return body; },

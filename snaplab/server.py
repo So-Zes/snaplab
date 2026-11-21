@@ -731,6 +731,8 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/providers":
             from .setup import configure
             return configure(app, b, add=True)
+        if path == "/api/decision-watch":
+            return {"decision_watch": app.decision_watch.set_enabled(bool(b.get("enabled")))}
         if path == "/api/search":
             from .setup import search_key
             return search_key(app, b)
@@ -999,6 +1001,7 @@ def serve_forever(app, host: str, port: int) -> None:
             app.searcher.rustxng.ensure_in_background()
         app.housekeeper.start()
         app.tasks.start()
+        app.decision_watch.start()                  # experimental; checks only while switched on
     from . import deploy
     deploy.begin(app, stopping, background)     # after an update, once the updater has checked the data
     try:

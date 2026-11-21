@@ -2,6 +2,33 @@
 
 Newest first. Each entry: the date, what changed, and why.
 
+## 2026-11-22 Version 1.1.5
+
+- Version 1.1.5: an experimental decision watch (off by default) that wakes a bot when work shows no progress.
+
+## 2026-11-22 Experiment: a decision model watches work without progress and wakes a bot
+
+- `decision_watch.py` (new): while switched on, it looks every 2 minutes at running SnapCode sessions and at bot
+  replies being written. Work without progress for 10 minutes is described (kind, title, how long it has run and
+  been quiet, its last few events with a short excerpt) to a decision model with one yes/no question: is it stuck
+  in a way that should be looked at now? At 0.6 or more a bot is woken like a wake-up it set itself: a session's
+  own bot in the room it was started from; for a stuck reply the lead bot in its own chat (or a push notification
+  when the lead's own reply is stuck). Nothing is stopped or cut. The same work is not asked about again for 30
+  minutes.
+- The model is `liquid/d1.2-ultra` on OpenRouter's decisions endpoint (`/api/alpha/decisions`), key
+  `OPENROUTER_API_KEY` in the credential store. What is sent goes through the same redaction as model calls (home
+  folder, user and PC names, tailnet) and the API key guard; OpenRouter's decision models may keep what they
+  receive. Every decision is appended to `data/decision-watch.jsonl`.
+- On and off: Settings > Experiments (`decision_watch` in settings.json) or `decision_watch.enabled` in config.json
+  (the setting wins); off by default. `every_s` 120, `quiet_s` 600, `wake_at` 0.6, `rewake_s` 1800, `model`, `url`
+  and `key_env` can be changed in config `decision_watch`.
+- Easy to take out: the feature is this one module plus one start in `server.background()`, one view in the
+  bootstrap, `POST /api/decision-watch` and one card in Settings. Switching it off stops the next check and any
+  decision call still waiting.
+- Why: SnapLab no longer cuts waiting work by time, so something has to notice work that hangs. Tried with the
+  real model on two synthetic descriptions: a page wait quiet for 41 minutes got 0.99, a Rust build quiet for 10
+  minutes 0.28; one call costs about $0.000015.
+
 ## 2026-11-22 Version 1.1.4
 
 - Version 1.1.4: a project's `data/`, `runtime/` and `config.json` now move between the PC and the worker.
