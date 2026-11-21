@@ -35,9 +35,8 @@
   },
   "mcp_servers": {},
   "bot_conversations": {
-    "max_consecutive": 6,
-    "max_hourly": 0,
-    "repeat_window": 20
+    "max_consecutive": 0,
+    "max_hourly": 0
   },
   "task_name": "SnapLab"
 }

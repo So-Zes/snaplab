@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import copy
 import json
+import threading
 import urllib.request
 
 
@@ -11,9 +12,60 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
-def open_request(req, **kwargs):
-    # Neither credentials nor conversation bodies may follow a redirect.
-    return urllib.request.build_opener(NoRedirect()).open(req, **kwargs)
+class RequestCancelled(Exception):
+    """open_request(cancel=...) gave up because the caller was stopped."""
+
+
+def open_request(req, *, timeout=None, cancel=None):
+    """Open a request without following redirects (neither credentials nor conversation bodies may follow one).
+
+    timeout None waits without a time limit. With cancel (a function), the wait ends as soon as cancel() is true,
+    also while the caller still reads the answer: the connection is closed and RequestCancelled is raised (a read
+    that was cut raises the usual OSError or ValueError)."""
+    opener = urllib.request.build_opener(NoRedirect())
+    if cancel is None:
+        return opener.open(req, timeout=timeout)
+    if cancel():
+        raise RequestCancelled()
+    box, done, lock = {}, threading.Event(), threading.Lock()
+
+    def run():
+        try:
+            box["resp"] = opener.open(req, timeout=timeout)
+        except BaseException as e:  # noqa: BLE001 - handed to the caller
+            box["error"] = e
+        with lock:
+            done.set()
+            late = box.get("abandoned") and box.get("resp")
+        if late:
+            _close(late)
+    threading.Thread(target=run, daemon=True, name="open-request").start()
+    while not done.wait(0.2):
+        if cancel():
+            with lock:
+                box["abandoned"] = not done.is_set()
+            if box["abandoned"]:
+                raise RequestCancelled()
+            break
+    if "error" in box:
+        raise box["error"]
+    resp = box["resp"]
+
+    def watch():                         # close the answer when the caller is stopped while it reads
+        while not getattr(resp, "closed", True):
+            if cancel():
+                _close(resp)
+                return
+            threading.Event().wait(0.2)
+    threading.Thread(target=watch, daemon=True, name="open-request-watch").start()
+    return resp
+
+
+def _close(resp):
+    try:
+        resp.close()
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def capabilities(spec):

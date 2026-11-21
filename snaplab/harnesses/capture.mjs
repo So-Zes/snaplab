@@ -4,8 +4,9 @@ import fs from "node:fs";
 
 // options.fileAccess lets a local page load its own modules, textures and data over file:// (three.js, fetch).
 // options.commandMs is how long one browser command may take; heavy 3D pages need far more than a phone page.
+// 0 means no time limit (browser.mjs without --timeout); left out, it is 12 s.
 export async function browserPipe(browser, profile, options = {}) {
-  const commandMs = options.commandMs || 12000;
+  const commandMs = options.commandMs === undefined ? 12000 : options.commandMs;
   const child = spawn(browser, ["--headless=new", "--no-sandbox", "--disable-gpu", "--remote-debugging-pipe",
     ...(options.fileAccess ? ["--allow-file-access-from-files", "--enable-unsafe-swiftshader", "--use-angle=swiftshader"] : []),
     ...(process.env.HTTP_PROXY ? ["--proxy-server=" + process.env.HTTP_PROXY] : []),
@@ -34,7 +35,7 @@ export async function browserPipe(browser, profile, options = {}) {
   });
   const send = (method, params = {}, sessionId, ms = commandMs) => new Promise((resolve, reject) => {
     const id = ++next;
-    const timer = setTimeout(() => { pending.delete(id); reject(new Error("browser command " + method + " took longer than " + Math.round(ms / 1000) + " s")); }, ms);
+    const timer = ms ? setTimeout(() => { pending.delete(id); reject(new Error("browser command " + method + " took longer than " + Math.round(ms / 1000) + " s")); }, ms) : null;
     pending.set(id, { resolve, reject, timer, method });
     child.stdio[3].write(JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) }) + "\0");
   });

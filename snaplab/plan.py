@@ -18,7 +18,6 @@ from pathlib import Path
 
 CHECK_RE = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s*\[( |x|X|-|~)\]\s+(.+?)\s*$")
 FILE = Path(".snaplab") / "PLAN.md"
-MAX_STEPS = 30
 
 
 def parse(text: str) -> dict | None:
@@ -29,8 +28,6 @@ def parse(text: str) -> dict | None:
             label = " ".join(m.group(2).split())[:160]
             if label:
                 steps.append({"text": label, "done": m.group(1) in "xX"})
-        if len(steps) >= MAX_STEPS:
-            break
     if not steps:
         return None
     done = sum(1 for s in steps if s["done"])
@@ -50,7 +47,7 @@ def read(folder: Path) -> tuple[dict | None, int]:
 
 def write(folder: Path, steps: list) -> dict | None:
     lines = ["# Plan", ""]
-    for s in steps[:MAX_STEPS]:
+    for s in steps:
         if isinstance(s, str):
             text, done = s, False
         elif isinstance(s, dict):

@@ -283,9 +283,10 @@ class DeliveryTest(unittest.TestCase):
             self.app.attachments.create(self.session, "empty.txt")
         path = self.folder / "large.bin"
         with path.open("wb") as f:
-            f.truncate(MAX_BYTES + 1)
+            f.truncate(1025)
+        self.assertEqual(MAX_BYTES, 4 * 1024 ** 3)            # one delivered file may be as large as a transfer
         with self.assertRaises(ValueError):
-            read_local(self.folder, "large.bin")
+            read_local(self.folder, "large.bin", 1024)
         synthetic = "synthetic-round11-sensitive-value"
         self.app.guard.add(synthetic)
         self.produced("secret.txt", synthetic.encode())
@@ -348,16 +349,20 @@ class DeliveryTest(unittest.TestCase):
         self.produced()
         prepare_capture(self.folder)
         path = self.folder / ".snaplab/attachments.json"
-        for text in ("{", "{}", json.dumps([{"path": "index.html"}] * 9), "x" * 16385):
+        for text in ("{", "{}", "x" * 16385):
             path.write_text(text)
             self.assertEqual(self.app.attachments.collect(self.session, self.folder), ([], ["invalid_manifest"]))
+        # any number of entries since 2026-11-21 (it was at most 8); the same file is delivered once
+        path.write_text(json.dumps([{"path": "index.html"}] * 9))
+        out, errors = self.app.attachments.collect(self.session, self.folder)
+        self.assertEqual((len(out), errors), (1, []))
 
     def test_bot_scope_and_running_session(self):
         self.produced()
         peer = self.app.create_bot(name="Other")
         box = Toolbox(self.app, peer, room=self.app.store.dm_room(peer["id"]))
-        with self.assertRaises((ValueError, PermissionError)):
-            box.t_publish_file(self.session["id"], "index.html")
+        # every bot may use every project's results in its own chat since 2026-11-21
+        self.assertIn("delivered", box.t_publish_file(self.session["id"], "index.html").content)
         self.session["status"] = "running"
         self.app.store.save_session(self.session)
         with self.assertRaises(ValueError):

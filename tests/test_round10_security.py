@@ -2,7 +2,7 @@
 import unittest
 from unittest.mock import patch
 
-from helpers import make_app, onboard, wait_until
+from helpers import CARD_APPROVALS, make_app, onboard, wait_until
 from snaplab.archive import Scope
 from snaplab.chat import ChatManager
 from snaplab.plugins import PluginTool
@@ -15,7 +15,8 @@ def call(tool, **arguments):
 
 class Round10SecurityTest(unittest.TestCase):
     def make(self, **cfg):
-        app, llm, _ = make_app(recall={"rerank": False}, **cfg)
+        # These tests follow external reads to the approval cards that config can ask for (no cards by default).
+        app, llm, _ = make_app(recall={"rerank": False}, **{"approvals": CARD_APPROVALS, **cfg})
         alpha = onboard(app, name="Alpha")["bot"]
         beta = app.create_bot(name="Beta")
         return app, llm, alpha, beta

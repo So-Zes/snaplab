@@ -70,6 +70,25 @@ class RemoteTest(unittest.TestCase):
         self.assertIs(constructor.call_args.kwargs["slots"], self.app.slots)
         return result
 
+    def test_normal_work_gets_no_line_limit_or_staging_rule(self):
+        # SnapCode work is not told to write at most 200 lines or to build web apps in stages (2026-11-21).
+        from snaplab.harnesses.base import TurnResult
+        seen = []
+
+        def fake(s, folder, task, ctl, first):
+            seen.append(task)
+            return TurnResult(ok=False, error="synthetic stop")
+        self.app.store.save_session({**self.app.store.session(self.session["id"]), "task_kind": "web",
+                                     "required_files": ["index.html"]})
+        harness = self.app.sessions.harnesses[self.session["harness"]]
+        with patch.object(harness, "run_turn", side_effect=fake), \
+             patch("snaplab.sessions.sandbox_run", side_effect=AssertionError("no local tests")):
+            self.app.sessions._turn(self.session["id"], "Make a page", True, self.ctl)
+        self.assertTrue(seen)
+        for gone in ("200行", "担当のファイルの外", "Build in stages", "Do not generate the whole app"):
+            self.assertNotIn(gone, seen[0])
+        self.assertIn("Required output files: index.html", seen[0])
+
     def test_default_local_and_existing_session_remains_local(self):
         self.assertEqual(config.DEFAULTS["codex"]["backend"], "local")
         self.assertEqual(remote.backend(self.app, {}), "local")
@@ -151,7 +170,8 @@ class RemoteTest(unittest.TestCase):
     def test_config_and_remote_ui_are_bilingual(self):
         parsed = tomllib.loads(remote.config_text(self.app, None, 34000))
         self.assertEqual(parsed["model_providers"]["snaplab"]["base_url"], "http://127.0.0.1:34000/v1")
-        self.assertEqual(parsed["mcp_servers"]["snaplab_web"]["tool_timeout_sec"], 780)
+        from snaplab.harnesses.adapters import NO_TIMEOUT_S
+        self.assertEqual(parsed["mcp_servers"]["snaplab_web"]["tool_timeout_sec"], NO_TIMEOUT_S)   # no limit in effect
         self.assertNotIn("windows", parsed)
         with patch("snaplab.harnesses.remote.available", return_value=(True, "")):
             info = self.app.sessions.harnesses["codex"].info()

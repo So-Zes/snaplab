@@ -23,6 +23,13 @@ def limit(value) -> float:
     return value if value > 0 else float("inf")
 
 
+def wait_s(value) -> float | None:
+    """A configured wait in seconds for a socket or a subprocess: 0, empty or missing means no time limit (None).
+    Such waits end when the work is stopped, not by the clock."""
+    v = limit(value)
+    return None if v == float("inf") else v
+
+
 DEFAULTS: dict = {
     "listen_host": "127.0.0.1",
     "listen_port": 18445,
@@ -40,27 +47,27 @@ DEFAULTS: dict = {
         "after_tools_effort": "medium",   # once a turn has called a tool, the next calls think more (measured: low
                                           # kept working after the task was done in 3 of 5 tasks, medium in 0)
         "desktop_effort": "low",
-        "work_max_tokens": 20000,
+        "work_max_tokens": 0,        # 0 = the provider decides how long a SnapCode model reply may be
         "work_effort": "medium",     # sessions and research: medium
-        "timeout_s": 600,
+        "timeout_s": 0,              # a model request: 0 = no time limit (Stop ends it)
         # The provider's Cloudflare front blocks the default Python user agent, so we name ourselves.
         "user_agent": "snaplab/0.1",
     },
     "slots": {
         "dir": None,                 # default: <data_dir>/locks. Point it at a shared folder to share the limit with other tools.
         "count": 2,
-        "session_max": 2,            # session work (Codex, bot-only) may hold at most this many, so chat is never starved
+        "session_max": 0,            # 0 = session work may use every slot (set a number to keep some for chats)
         "background_max": 1,         # room summaries and the memory tidy: at most this many (they always wait last)
     },
     "qwen_log": {"enabled": True},
     "proxy": {"port": 18432},
     "search": {"provider": "auto", "cooldown_minutes": 30, "rustxng": {"enabled": True}},
     "push": {"subject": "mailto:snaplab@example.com"},
-    # Caps that end long work are 0 = no limit (see limit()): tool steps per bot turn, model calls and minutes per
-    # SnapCode turn, continuations a bot makes on its own. Hang guards (idle, single request, tests) keep values.
-    "chat": {"history_messages": 24, "max_steps": 0, "max_tokens": 8192},
-    "sessions": {"max_steps": 0, "max_api_calls": 0, "codex_timeout_min": 0, "test_timeout_s": 180,
-                 "idle_timeout_s": 600, "auto_continue": 0},
+    # Caps that end long work are 0 = no limit (see limit()): tool steps and reply tokens per bot turn, model calls
+    # and minutes per SnapCode turn, a test run, a quiet Codex, continuations a bot makes on its own.
+    "chat": {"history_messages": 24, "max_steps": 0, "max_tokens": 0},
+    "sessions": {"max_steps": 0, "max_api_calls": 0, "codex_timeout_min": 0, "test_timeout_s": 0,
+                 "idle_timeout_s": 0, "auto_continue": 0},
     "require_tailscale_user": True,
     "local_mode": False,            # explicitly enabled by the first-run launcher; legacy installs keep their gate
     "owner_login": None,             # detected from tailscale when empty
@@ -75,12 +82,12 @@ DEFAULTS: dict = {
     "models": {},
     "routing": {},
     "sse_seconds": 900,
-    "memory_chars": 4000,
-    "user_note_chars": 1400,         # data/shared/user.md: what every bot knows about the user
+    "memory_chars": 0,               # a bot's long-term memory; 0 = no size limit
+    "user_note_chars": 0,            # data/shared/user.md, what every bot knows about the user; 0 = no size limit
     # Background upkeep that calls the model (see snaplab/background.py); it always waits behind chats.
     "summary": {"enabled": True, "every_messages": 20, "recent_tokens": 6000, "max_tokens": 1000, "min_recent": 6,
                 "effort": "low", "input_tokens": 9000},
-    "memory_tidy": {"enabled": True, "hour": 3, "every_days": 1, "min_chars": 1200, "effort": "low"},            # each bot's long-term memory file; bigger writes are refused (the bot must tidy up)
+    "memory_tidy": {"enabled": True, "hour": 3, "every_days": 1, "min_chars": 1200, "effort": "low"},
     # What a bot sees per call (context.py).
     # Measured with the Snapscribe model (2026-11-01): first token after ~2.6 s at 16K, ~6 s at 32K, ~12 s at 64K for a new
     # context; quality held to 64K. Chats and rooms stop at 32K; background sessions may use up to 64K.
@@ -90,10 +97,10 @@ DEFAULTS: dict = {
                 "message_tokens": 900, "history_messages": 40},
     "context_builder": None,         # "module:Class" to replace the default context builder
     # Proposal cards: which bot actions wait for the user's approval ("always" | "after_web" | "never")
-    "approvals": {},                 # Explicit overrides only; backend-aware defaults live in tools.py.
+    "approvals": {},                 # Explicit overrides only; every action defaults to "never" (tools.py).
     "max_bots": None,                # no limit; set a number to cap how many bots may exist
     "rooms": {"default_responder": "all"},  # all members can choose to speak or stay silent
-    "bot_conversations": {"max_consecutive": 6, "max_hourly": 0, "repeat_window": 20},   # max_hourly 0 = no limit
+    "bot_conversations": {"max_consecutive": 0, "max_hourly": 0},   # 0 = no limit
     "codex": {"read_paths": [], "backend": "local",
               "remote": {"host": None, "user": "snaplab", "ssh_exe": "ssh", "ssh_port": 22,
                          "codex_bin": ".local/bin/codex"}},

@@ -492,10 +492,11 @@ class OrchestratorTest(unittest.TestCase):
             self.assertIn("Update BRIEF.md", log)
 
     def test_after_web_the_brief_needs_approval(self):
+        # No card by default since 2026-11-21; config "after_web" still asks after a web read.
         from test_core import script, wait_reply
         app, llm, _ = make_app(script({"tool_calls": [{"name": "read_page", "arguments": {"url": "https://example.org"}}]},
                                       {"tool_calls": [{"name": "write_brief", "arguments": {"project": "G", "text": "# G\nnew"}}]},
-                                      {"content": "Waiting."}))
+                                      {"content": "Waiting."}), approvals={"write_brief": "after_web"})
         room = onboard(app)["room"]["id"]
         p = app.create_project(name="G", description="d")
         before = (Path(app.cfg["projects_dir"]) / p["slug"] / "BRIEF.md").read_text(encoding="utf-8")

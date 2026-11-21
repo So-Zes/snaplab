@@ -44,8 +44,8 @@ class TestsHarness(Harness):
         ctl.emit({"kind": "command", "text": cmd})
         before = artifact_version(Path(folder))
         code, out = sandbox_run(self.app, session["id"], Path(folder), cmd,
-                                float(self.app.cfg["sessions"]["test_timeout_s"]),
-                                git_dir=Path(session["git_dir"]) if session.get("git_dir") else None)
+                                self.app.cfg["sessions"].get("test_timeout_s") or 0,
+                                git_dir=Path(session["git_dir"]) if session.get("git_dir") else None, cancel=ctl.cancelled)
         tests = parse_tests(code, out)
         tests.update(tested_version=before, version_after=artifact_version(Path(folder)),
                      exit_code=code, source_type="runtime")

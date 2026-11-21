@@ -47,7 +47,9 @@ class ArchiveTest(unittest.TestCase):
         box("list_projects", {}, "c2")
         self.assertTrue(app.archive.search("list_projects", Scope(everything=True), kinds=["tool"]))
 
-    def test_a_teammate_finds_only_what_it_may_see(self):
+    def test_a_teammate_finds_its_rooms_and_every_project(self):
+        # Rooms stay as before; projects and the lead's tools are open to every bot since 2026-11-21.
+        from unittest.mock import patch
         from snaplab.tools import Toolbox
         app, _ = self._app()
         p = app.create_project(name="Calc")
@@ -68,12 +70,14 @@ class ArchiveTest(unittest.TestCase):
         self.assertIn("password", res.content)
         rid = re.search(r"\[(a-[0-9a-f]{8})\]", lbox("recall", {"query": "password"}, "c3").content).group(1)
         self.assertIn("Error", kbox("recall", {"record": rid}, "c4").content)    # not by its id either
-        self.assertNotIn("Secret plan", kbox("list_projects", {}, "c5").content)
-        res = kbox("start_session", {"project": q["id"], "harness": "bot", "prompt": "look"}, "c6")
-        self.assertIn("only the owner or lead bot", res.content)
+        self.assertIn("Secret plan", kbox("list_projects", {}, "c5").content)
+        with patch.object(app.sessions, "_start"):
+            res = kbox("start_session", {"project": q["id"], "harness": "bot", "prompt": "look"}, "c6")
+        self.assertIn("session_id", res.content)
         self.assertTrue(json.loads(kbox("create_project", {"name": "X", "description": "d"}, "c7").content)["created"])
         self.assertIn("Ken", lbox("read_memory", {"bot": "Ken"}, "c8").content)
-        self.assertNotIn("read_memory", [t["function"]["name"] for t in kbox.schemas()])
+        self.assertIn("read_memory", [t["function"]["name"] for t in kbox.schemas()])
+        self.assertIn(lead["name"], kbox("read_memory", {"bot": lead["name"]}, "c9").content)
 
     def test_forgotten_memory_is_still_in_the_record(self):
         app, _ = self._app()

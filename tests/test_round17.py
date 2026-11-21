@@ -68,11 +68,9 @@ class RussianTest(unittest.TestCase):
                'ask_user':{'question':'What should I do next with this project?'},
                'update_dashboard':{'widgets':[{'id':'keep_identifier','title':'This is a long English title'}]},
                'update_plan':{'steps':[{'text':'Implement a small Python application','done':False}]}}
-        for name,args in cases.items():
-            self.assertIsNotNone(box.wrong_language_arg(name,args),name)
-        self.assertIsNone(box.wrong_language_arg('update_plan',{'steps':[{'text':'Создать приложение','done':False}]}))
-        self.assertEqual(box.wrong_language_arg('ask_user',{'question':'Какой отчёт вам нужен?',
-                         'options':['Please provide a detailed report']}), 'options')
+        # Tool arguments in another language are not refused (2026-11-21); the house rules ask for the room's language.
+        self.assertFalse(hasattr(box, 'wrong_language_arg'))
+        self.assertTrue(cases)
         self.assertIn('на «вы»',bot['system_prompt'])
         self.assertNotIn('Russian',bot['system_prompt'])
         self.assertIn('Russian',prompts.house_rules('ru'))

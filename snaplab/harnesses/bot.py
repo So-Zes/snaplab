@@ -94,7 +94,7 @@ class BotHarness(Harness):
         try:
             res = run_loop(app.models.get(session.get("model") or bot.get("model"), "session"), convo, box.schemas(), box,
                            effort=app.cfg["api"]["work_effort"],
-                           max_steps=step_cap(app.cfg["sessions"].get("max_steps")), max_tokens=16384, source="session", caller_id=session["id"],
+                           max_steps=step_cap(app.cfg["sessions"].get("max_steps")), max_tokens=None, source="session", caller_id=session["id"],
                            cancel=ctl.cancelled, kind="session", tool_references=references,
                            final_check=language_check if lang == "ru" else None,
                            compact_at=int(int((app.cfg.get("context") or {}).get("session_max_tokens", 64000)) * 0.75))

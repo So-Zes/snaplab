@@ -22,7 +22,7 @@ import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
-from .provider_protocol import open_request, prepare, tool_fragments
+from .provider_protocol import RequestCancelled, open_request, prepare, tool_fragments
 
 EFFORTS = {"minimal": "low", "low": "low", "medium": "medium", "high": "xhigh", "xhigh": "xhigh"}
 THINK_RE = re.compile(r"<think>(.*?)</think>", re.S)
@@ -232,7 +232,8 @@ class LLM:
         self.model = api_cfg["model"]
         self.name = api_cfg.get("name") or self.model
         self.key_env = api_cfg.get("api_key_env") or "SNAPSCRIBE_API_KEY"
-        self.timeout = float(api_cfg.get("timeout_s", 600))
+        from .config import wait_s
+        self.timeout = wait_s(api_cfg.get("timeout_s"))          # None (the default): no time limit; Stop ends it
         self.user_agent = api_cfg.get("user_agent") or "snaplab/0.1"
         self.effort_style = api_cfg.get("effort_style") or ("chat_template_kwargs" if "qwen" in self.model.lower() else "none")
         self.extra = dict(api_cfg.get("extra") or {})
@@ -262,7 +263,7 @@ class LLM:
                           source=source, model=self.name)
 
     def stream_chat(self, messages: list[dict], *, tools: list | None = None, effort: str | None = "low",
-                    max_tokens: int = 4096, on_reasoning=None, on_content=None, cancel=None,
+                    max_tokens: int | None = None, on_reasoning=None, on_content=None, cancel=None,
                     source: str = "chat", kind: str = "chat", on_wait=None, tool_choice: str = "auto") -> Reply:
         from .slots import SlotsBusy
         key = self.key()
@@ -273,8 +274,9 @@ class LLM:
             messages = self.redactor.clean_obj(messages)
         if self.effort_style != "chat_template_kwargs":
             messages = [{k: v for k, v in m.items() if k != "reasoning_content"} for m in messages]
-        body: dict = {"model": self.model, "messages": messages, "max_tokens": int(max_tokens), "stream": True,
-                      "stream_options": {"include_usage": True}}
+        body: dict = {"model": self.model, "messages": messages, "stream": True, "stream_options": {"include_usage": True}}
+        if max_tokens:                    # None: the provider decides (within the model's output limit)
+            body["max_tokens"] = int(max_tokens)
         for k, v in self.extra.items():
             body.setdefault(k, v)
         if tools:
@@ -310,8 +312,11 @@ class LLM:
                 raise Cancelled()
             t0 = time.perf_counter()
             try:
-                resp = open_request(req, timeout=self.timeout)
+                resp = open_request(req, timeout=self.timeout, cancel=cancel)
                 wire = WireResponse(resp)
+            except RequestCancelled:
+                self._record(None, False, source)
+                raise Cancelled() from None
             except urllib.error.HTTPError as e:
                 try:
                     text = e.read().decode("utf-8", "replace")

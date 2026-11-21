@@ -56,13 +56,14 @@ def clean_color(color: str, fallback: str) -> str:
 
 
 def brief_text(name: str, desc: str, tests: str, lang: str = "en", *, ssh: bool = False) -> str:
-    """BRIEF.md: the project's goal and rules, in the app language. Agents read it; the user (or the lead bot) edits it."""
+    """BRIEF.md: the project's goal and notes, in the app language. Agents read it; the user (or a bot) edits it.
+    ssh=True means a Linux worker with internet (codex.backend "ssh" or "wsl"), which the brief states as a fact.
+    It carries no rules about where to work or what not to install: the sandbox itself draws the boundary."""
     t = lambda k, **v: i18n.text(lang, k, **v)  # noqa: E731
     done = "- " + (t("srv.brief.tests_pass", cmd=tests) if tests else t("srv.brief.user_confirms"))
     lines = [f"# {name}", "", "## " + t("srv.brief.goal"), desc or t("srv.brief.goal_ph"), "", "## " + t("srv.brief.done"),
-             done, "", "## " + t("srv.brief.rules"), "- " + t("srv.brief.rule1"), "- " + t("srv.brief.rule2_ssh" if ssh else "srv.brief.rule2"),
-             # The standard-library rule only follows from having no network; the Linux worker can install packages.
-             *([] if ssh else ["- " + t("srv.brief.rule3")]), "- " + t("srv.brief.rule4"), ""]
+             done, "", "## " + t("srv.brief.rules"), *(["- " + t("srv.brief.rule2_ssh")] if ssh else []),
+             "- " + t("srv.brief.rule4"), ""]
     return "\n".join(lines)
 
 
@@ -298,7 +299,7 @@ class App:
                                      token=self.proxy_token, log_path=self.store.path("logs", "proxy.log"),
                                      redactor=self.redactor, on_usage=self._on_usage, web_mcp=self.web_mcp,
                                      qwen_log=self.qwen_log,
-                                     output_limit=int(self.cfg["api"].get("work_max_tokens", 20000)))
+                                     output_limit=int(self.cfg["api"].get("work_max_tokens") or 0))
         if not self.translator.start():
             self.log(f"translator did not start: {self.translator.error}")
         elif self.cfg.get("local_mode"):
@@ -342,7 +343,8 @@ class App:
         from . import memory as mem
         bot = self.store.bot(bot_id) or {"id": bot_id, "name": by or "Bot"}
         user = scope == "user"
-        limit = int(self.cfg.get("user_note_chars" if user else "memory_chars", 1400 if user else 4000))
+        from .config import limit as cap
+        limit = cap(self.cfg.get("user_note_chars" if user else "memory_chars"))     # 0 (the default) = no limit
         cur = self.store.user_note() if user else self.store.memory(bot_id)
         if mode == "forget":
             new, gone = mem.forget(cur, text)
@@ -353,7 +355,7 @@ class App:
         else:
             new = (cur.rstrip() + "\n" if cur.strip() else "") + mem.stamp_line(text) + "\n"
         if len(new) > limit:
-            raise mem.MemoryFull(f"{'The notes about the user are' if user else 'Memory is'} full ({len(cur)}/{limit} characters). "
+            raise mem.MemoryFull(f"{'The notes about the user are' if user else 'Memory is'} full ({len(cur)}/{int(limit)} characters). "
                                  "Nothing was saved. Rewrite them shorter with mode=\"replace\" (merge or drop old notes), "
                                  "then add the new note.")
         if user:
@@ -414,7 +416,7 @@ class App:
             bot = {"id": new_id("b"), "name": name, "color": clean_color(color, PALETTE[0]), "initials": initials_of(name),
                    "tone": tone if tone in (*prompts.TONES, "custom") else "friendly", "tone_custom": tone_custom[:200],
                    "call_user": call_user, "role": "orchestrator", "orchestrator": True, "projects": [],
-                   "system_prompt": prompt[:8000],
+                   "system_prompt": prompt,
                    "avatar": avatars.validate_choice(avatar if avatar is not None else avatars.default_face(lead=True), self.store)}
             self.store.save_bot(bot)
             room = self.store.ensure_dm(bot)
@@ -459,7 +461,7 @@ class App:
             role=role.strip()[:300])
         bot = {"id": new_id("b"), "name": name, "color": clean_color(color, fallback), "initials": initials_of(name),
                "tone": tone, "tone_custom": tone_custom[:200], "call_user": call_user, "role": role.strip()[:300],
-               "orchestrator": False, "projects": [], "system_prompt": prompt[:8000],
+               "orchestrator": False, "projects": [], "system_prompt": prompt,
                "avatar": avatars.validate_choice(avatar if avatar is not None else avatars.default_face(
                    role, [b.get("avatar") for b in self.store.bots()]), self.store)}
         self.store.save_bot(bot)
@@ -497,7 +499,7 @@ class App:
             sp = str(fields["system_prompt"]).strip()
             if not sp:
                 raise ValueError("the system prompt cannot be empty")
-            bot["system_prompt"] = sp[:8000]
+            bot["system_prompt"] = sp
         if "call_user" in fields:
             bot["call_user"] = str(fields["call_user"]).strip()[:32]
         if "model" in fields:
@@ -838,7 +840,7 @@ class App:
         folder.mkdir(parents=True, exist_ok=False)
         desc = " ".join((description or "").split())[:600]
         # The brief goes into the Linux workspace: private values (the PC user's name, home folder) stay hidden there.
-        commit = gitops.init_repo(folder, {"BRIEF.md": self.redactor.clean(brief_text(name, desc, tests, self.lang, ssh=self.cfg.get('codex', {}).get('backend') == 'ssh')),
+        commit = gitops.init_repo(folder, {"BRIEF.md": self.redactor.clean(brief_text(name, desc, tests, self.lang, ssh=self.cfg.get('codex', {}).get('backend') in ('ssh', 'wsl'))),
                                            "AGENTS.md": self.guard.clean(agents_text(name))})
         p = {"id": new_id("p"), "name": name, "slug": slug, "description": desc, "test_command": tests, "bot": bot,
              "git": bool(commit), "first_commit": commit}
@@ -934,7 +936,7 @@ class App:
         p = self.store.project(pid)
         if not p:
             raise LookupError("no such project")
-        text = self.redactor.clean((text or "").strip()[:8000])
+        text = self.redactor.clean((text or "").strip())
         if not text:
             raise ValueError("the brief is empty")
         folder = Path(self.cfg["projects_dir"]) / p["slug"]
@@ -1108,8 +1110,8 @@ class App:
         view = {"sections": report.pop("sections", []), "history": report.pop("history_view", []), "report": report,
                 "room": room["id"], "room_name": room.get("name"), "room_kind": room.get("kind"),
                 "fresh_start": room.get("fresh_start"), "context_since": b.get("context_since")}
-        from .access import project_ids
-        mine = project_ids(self, b)
+        from .access import looked_after
+        mine = looked_after(self, b)
         projects = [p for p in self.projects_view() if b.get("orchestrator") or p["id"] in mine]
         ss = st.sessions()
         if b.get("orchestrator"):

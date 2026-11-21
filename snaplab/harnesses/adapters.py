@@ -5,6 +5,10 @@ It must have no imports from SnapLab and never contain credentials.
 """
 import json
 
+# The longest wait Node's timers (Pi) take: 2^31-1 ms, about 24.8 days. Larger values fire at once in Node, so this
+# stands for "no time limit" in the agents' MCP settings; stopping the session ends a call before that.
+NO_TIMEOUT_S = 2147483
+
 
 def pi_config(model, port, context, output):
     return {'providers': {'snaplab': {'baseUrl': f'http://127.0.0.1:{port}/v1',
@@ -32,7 +36,7 @@ def launch(req, home, folder, config_dir):
         'extensions': ['-builtin:codemode', '-builtin:llama.cpp']}), encoding='utf-8')
     Path(config_dir, 'mcp.json').write_text(json.dumps({'mcpServers': {'snaplab_web': {
         'url': req['mcp_url'], 'headers': {'Authorization': 'Bearer ${SNAPLAB_WEB_TOKEN}'},
-        'exposure': 'direct', 'timeout': 780}}}), encoding='utf-8')
+        'exposure': 'direct', 'timeout': NO_TIMEOUT_S}}}), encoding='utf-8')
     binary = req.get('pi_bin', '.local/bin/pi')
     binary = str(home / binary) if not binary.startswith('/') else binary
     package = home / '.local/lib/node_modules/@earendil-works/pi-coding-agent/dist/index.js'

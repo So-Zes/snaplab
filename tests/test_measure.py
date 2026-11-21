@@ -128,28 +128,33 @@ class StablePrefixTest(unittest.TestCase):
 
 
 class DashboardTest(unittest.TestCase):
-    def test_no_full_replace_and_removing_asks_first(self):
+    def test_full_replace_and_removing_run_directly(self):
+        # Bots may replace the whole board and remove widgets without a card (2026-11-21); config can ask for one.
         app, _, _ = make_app()
         room = onboard(app)["room"]["id"]
         from snaplab.tools import Toolbox
         box = Toolbox(app, app.store.orchestrator(), room=app.store.room(room), lang="en")
-        before = [w["id"] for w in app.store.dashboard()["widgets"]]
-        res = box("update_dashboard", {"op": "set", "widgets": []}, "c1")
-        self.assertIn("Error", res.content)
-        self.assertEqual([w["id"] for w in app.store.dashboard()["widgets"]], before)
-        res = box("update_dashboard", {"op": "remove", "ids": before}, "c2")
-        self.assertTrue(res.stop)
-        self.assertEqual([w["id"] for w in app.store.dashboard()["widgets"]], before)
-        q = app.store.questions()[-1]
-        self.assertEqual(q["action"]["op"], "remove")
-        app.chat.answer(q["id"], "Approve")
-        self.assertEqual(app.store.dashboard()["widgets"], [])
         tool = next(t for t in box.schemas() if t["function"]["name"] == "update_dashboard")
-        self.assertNotIn("set", tool["function"]["parameters"]["properties"]["op"]["enum"])
+        self.assertIn("set", tool["function"]["parameters"]["properties"]["op"]["enum"])
+        res = box("update_dashboard", {"op": "set", "widgets": [{"id": "only", "type": "stat", "value": 1}]}, "c1")
+        self.assertFalse(res.stop)
+        self.assertEqual([w["id"] for w in app.store.dashboard()["widgets"]], ["only"])
+        res = box("update_dashboard", {"op": "remove", "ids": ["only"]}, "c2")
+        self.assertFalse(res.stop)
+        self.assertEqual(app.store.dashboard()["widgets"], [])
+        self.assertEqual(app.store.questions(), [])
+        app.cfg["approvals"] = {"update_dashboard": "always"}
+        box("update_dashboard", {"op": "upsert", "widgets": [{"id": "x", "type": "stat", "value": 2}]}, "c3")
+        res = box("update_dashboard", {"op": "set", "widgets": [{"id": "y", "type": "stat", "value": 3}]}, "c4")
+        self.assertTrue(res.stop)
+        q = app.store.questions()[-1]
+        self.assertEqual(q["action"]["op"], "set")
+        app.chat.answer(q["id"], "Approve")
+        self.assertEqual([w["id"] for w in app.store.dashboard()["widgets"]], ["y"])
 
 
 class GroupRoomTest(unittest.TestCase):
-    def test_session_instructions_in_a_group_wait_for_the_card(self):
+    def test_session_instructions_in_a_group_need_no_card(self):
         app, _, _ = make_app()
         onboard(app)
         p = app.create_project(name="Calc", description="d")
@@ -160,9 +165,9 @@ class GroupRoomTest(unittest.TestCase):
         from snaplab.tools import Toolbox
         box = Toolbox(app, app.store.bot(coral["id"]), room=app.store.room(g["id"]), lang="en")
         res = box("send_to_session", {"session_id": "s-0000beef", "prompt": "do more"}, "c1")
-        self.assertTrue(res.stop)
-        q = app.store.questions()[-1]
-        self.assertEqual((q["action"]["type"], q["prop"]["why"]), ("send_to_session", "group"))
+        # A group room no longer forces a card (2026-11-21).
+        self.assertFalse(res.stop)
+        self.assertEqual(app.store.questions(), [])
 
     def test_a_question_in_the_text_reaches_needs_you(self):
         app, _, _ = make_app(lambda m, t, e: {"content": "We could use unittest or pytest. Which one do you prefer, Sam?"})
@@ -174,7 +179,8 @@ class GroupRoomTest(unittest.TestCase):
         last = [m for m in app.store.messages(g["id"]) if m["role"] == "bot" and m.get("status") == "done"][-1]
         self.assertTrue(last.get("needs_you"))
 
-    def test_repeated_bot_contributions_are_hidden_and_bounded(self):
+    def test_repeated_bot_contributions_are_shown_and_a_configured_limit_bounds_them(self):
+        # Since 2026-11-21 a repeated text is not hidden and there is no default limit; config can set one.
         calls = []
 
         def responder(messages, tools, effort):
@@ -186,7 +192,7 @@ class GroupRoomTest(unittest.TestCase):
             if who == "Nemo":
                 return {"content": "@Coral please check this too."}
             return {"content": "Looks fine."}
-        app, _, _ = make_app(responder)
+        app, _, _ = make_app(responder, bot_conversations={"max_consecutive": 6})
         onboard(app)
         coral = app.create_bot(name="Coral", role="r")
         nemo = app.create_bot(name="Nemo", role="r")
@@ -195,8 +201,8 @@ class GroupRoomTest(unittest.TestCase):
         self.assertTrue(settle(app, g["id"]))
         time.sleep(0.3)
         coral_replies = [m for m in app.store.messages(g["id"]) if m.get("bot") == coral["id"] and m.get("status") == "done"]
-        self.assertEqual(len(coral_replies), 1)
-        self.assertLessEqual(len(calls), app.cfg["bot_conversations"]["max_consecutive"])
+        self.assertGreaterEqual(len(coral_replies), 2)              # "Looks fine." twice is shown both times
+        self.assertLessEqual(len(calls), 6)
 
 
 if __name__ == "__main__":

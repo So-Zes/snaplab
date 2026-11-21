@@ -59,8 +59,12 @@ class TaskTest(unittest.TestCase):
         self.assertEqual(weekly["days"], ["mon", "thu"])
         self.assertEqual(tasksmod.next_run(weekly, now.replace(hour=9)).strftime("%a"), "Thu")    # 2026-11-02 is a Monday
         self.assertEqual(tasksmod.clean_schedule({"kind": "every", "every_minutes": 10})["every_minutes"], 10)
+        # any interval above 0 since 2026-11-21 (it was at least 1 minute), and no longest interval
+        self.assertEqual(tasksmod.clean_schedule({"kind": "every", "every_minutes": 0.5})["every_minutes"], 0.5)
+        self.assertEqual(tasksmod.clean_schedule({"kind": "every", "every_minutes": 30 * 24 * 60})["every_minutes"], 43200)
+        self.assertEqual(tasksmod.next_run({"kind": "every", "every_minutes": 0.5}, now) - now, dt.timedelta(seconds=30))
         with self.assertRaises(ValueError):
-            tasksmod.clean_schedule({"kind": "every", "every_minutes": 0})            # at least 1 minute
+            tasksmod.clean_schedule({"kind": "every", "every_minutes": 0})
         with self.assertRaises(ValueError):
             tasksmod.clean_schedule({"kind": "daily", "time": "25:00"})
 
@@ -73,7 +77,7 @@ class TaskTest(unittest.TestCase):
                 return {"content": "", "tool_calls": [{"name": "schedule_task", "arguments": {
                     "title": "Morning news", "prompt": "Check the Python news", "kind": "daily", "time": "08:00"}}]}
             return {"content": "I asked you on a card."}
-        app, llm, _ = make_app(responder)
+        app, llm, _ = make_app(responder, approvals={"schedule_task": "always"})       # config asks for the card
         onboard(app)
         lead = app.store.orchestrator()
         room = app.store.dm_room(lead["id"])["id"]
@@ -93,17 +97,22 @@ class TaskTest(unittest.TestCase):
         self.assertTrue(wait_until(lambda: any("nothing new" in (m.get("text") or "") for m in app.store.messages(room))))
         self.assertIn("session", [c["kind"] for c in llm.calls if "Scheduled task" in c["messages"][-1]["content"]])
         self.assertEqual(app.tasks.tick(due), [])                       # not twice
-        # long missed runs are skipped, not piled up
+        # a run missed long ago is still done once (2026-11-21; it was skipped after 6 hours), not piled up
         app.tasks.change(tk["id"], "pause")
         self.assertEqual(app.tasks.tick(due + dt.timedelta(days=2)), [])
         app.tasks.change(tk["id"], "resume")
         late = dt.datetime.fromisoformat(app.tasks.get(tk["id"])["next_run"]) + dt.timedelta(hours=9)
+        self.assertEqual(app.tasks.tick(late), [tk["id"]])
         self.assertEqual(app.tasks.tick(late), [])
+        self.assertFalse(app.tasks.get(tk["id"]).get("missed"))
+        app.tasks.cfg["catch_up_hours"] = 6                               # a configured limit still skips
+        later = dt.datetime.fromisoformat(app.tasks.get(tk["id"])["next_run"]) + dt.timedelta(hours=9)
+        self.assertEqual(app.tasks.tick(later), [])
         self.assertEqual(app.tasks.get(tk["id"])["missed"], 1)
         app.tasks.change(tk["id"], "delete")
         self.assertEqual(app.tasks.all(), [])
 
-    def test_teammates_change_only_their_own_tasks(self):
+    def test_teammates_change_any_bots_tasks(self):
         from snaplab.tools import Toolbox
         app, _, _ = make_app()
         onboard(app)
@@ -111,8 +120,10 @@ class TaskTest(unittest.TestCase):
         ken = app.create_bot(name="Ken")
         tk = app.tasks.create(bot_id=lead["id"], title="Lead task", prompt="x", schedule={"kind": "every", "every_minutes": 60})
         box = Toolbox(app, app.store.bot(ken["id"]), room=app.store.dm_room(ken["id"]), lang="en")
-        self.assertIn("another bot", box("stop_task", {"task_id": tk["id"], "action": "delete"}, "c1").content)
-        self.assertEqual(box("list_tasks", {}, "c2").content, "No scheduled tasks.")
+        # every bot sees and changes every bot's tasks since 2026-11-21
+        self.assertIn("Lead task", box("list_tasks", {}, "c1").content)
+        self.assertNotIn("Error", box("stop_task", {"task_id": tk["id"], "action": "delete"}, "c2").content)
+        self.assertIsNone(app.tasks.get(tk["id"]))
 
 
 class InsideTest(unittest.TestCase):

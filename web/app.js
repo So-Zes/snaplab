@@ -1153,7 +1153,7 @@
       showBubble(); validate();
       next.addEventListener("click", () => { ob.step = 3; ob.promptEdited = false; renderOnboarding(); });
     } else {
-      const ta = h("textarea", { class: "input prompt-ta", rows: "12", maxlength: "8000", spellcheck: "false" }, ob.prompt);
+      const ta = h("textarea", { class: "input prompt-ta", rows: "12", spellcheck: "false" }, ob.prompt);
       ta.addEventListener("input", () => { ob.prompt = ta.value; ob.promptEdited = true; });
       append(body, [h("h2", { class: "ob-title" }, t("ob.prompt.title", { name: ob.name })), h("p", { class: "ob-text" }, t("ob.prompt.body", { name: ob.name })), ta,
         h("p", { class: "ob-note" }, icon("shield"), h("span", {}, t("ob.prompt.note")))]);
@@ -1609,12 +1609,14 @@
     const stopped = m.status === "stopped";
     const code = m.error_code || (stopped ? "" : "internal");
     const text = stopped ? t("msg.stopped") : t("err.code." + code);
-    const retry = !m.retried ? h("button", { class: "retry-btn", type: "button", onclick: async (e) => {
+    // "Try again" stays available after a retry too (it was offered once until 2026-11-21).
+    const retry = h("button", { class: "retry-btn", type: "button", onclick: async (e) => {
       const btn = e.currentTarget; btn.disabled = true;
       try { await api("/api/rooms/" + (m.room || roomEls.id) + "/retry", { message: m.id }); } catch (err) { btn.disabled = false; fail(err); }
-    } }, icon("play"), t("msg.retry")) : h("span", { class: "muted retried" }, t("msg.retried"));
+    } }, icon("play"), t("msg.retry"));
     return h("div", { class: "msg-err" + (stopped ? " muted" : "") },
-      h("div", { class: "err-row" }, icon(stopped ? "stop" : "alert"), h("span", { class: "err-text" }, text), retry),
+      h("div", { class: "err-row" }, icon(stopped ? "stop" : "alert"), h("span", { class: "err-text" }, text),
+        m.retried ? h("span", { class: "muted retried" }, t("msg.retried")) : null, retry),
       !stopped && m.error ? h("details", { class: "err-detail" }, h("summary", {}, t("msg.details")), h("pre", {}, m.error)) : null);
   }
   function thinkSecs(m) {
@@ -1881,7 +1883,7 @@
   }
 
   function buildComposer(room, b) {
-    const ta = h("textarea", { class: "composer-input", rows: "1", maxlength: "8000", placeholder: room.kind === "group" ? t("room.ph.group") : t("room.ph", { name: b ? b.name : room.name }), enterkeyhint: "send" });
+    const ta = h("textarea", { class: "composer-input", rows: "1", placeholder: room.kind === "group" ? t("room.ph.group") : t("room.ph", { name: b ? b.name : room.name }), enterkeyhint: "send" });
     autosize(ta, 150);
     const sendBtn = h("button", { class: "send", type: "button", "aria-label": t("room.send") }, icon("send"));
     const stopBtn = h("button", { class: "stop-btn", type: "button", "aria-label": t("room.stop") }, icon("stop"));
@@ -1988,7 +1990,7 @@
   function newProjectSheet() {
     const name = h("input", { class: "input", maxlength: "60", placeholder: t("np.name.ph") });
     const desc = autosize(h("textarea", { class: "input", rows: "2", maxlength: "600", placeholder: t("np.desc.ph") }), 140);
-    const tests = h("input", { class: "input mono", maxlength: "300", placeholder: t("np.tests.ph"), autocapitalize: "off", spellcheck: "false" });
+    const tests = h("input", { class: "input mono", placeholder: t("np.tests.ph"), autocapitalize: "off", spellcheck: "false" });
     const sel = h("select", { class: "input" }, S.bots.map((b) => h("option", { value: b.id }, b.name)));
     const btn = h("button", { class: "btn primary wide", type: "button" }, t("np.create"));
     const sh = sheet(t("np.title"), [field(t("np.name"), name), field(t("np.desc"), desc), field(t("np.tests"), tests), field(t("np.bot"), sel), btn]);
@@ -2036,7 +2038,7 @@
   }
   async function briefSheet(p) {
     const text = await loadBrief(p);
-    const ta = autosize(h("textarea", { class: "input prompt-ta", rows: "12", maxlength: "8000", spellcheck: "false" }, text || ""), 520);
+    const ta = autosize(h("textarea", { class: "input prompt-ta", rows: "12", spellcheck: "false" }, text || ""), 520);
     const btn = h("button", { class: "btn primary wide", type: "button" }, t("common.save"));
     const sh = sheet(t("project.brief") + " · " + p.name, [h("p", { class: "hint" }, t("project.brief.note")), ta, btn]);
     btn.addEventListener("click", async () => {
@@ -2048,7 +2050,7 @@
 
   function editProjectSheet(p) {
     const desc = autosize(h("textarea", { class: "input", rows: "2", maxlength: "600" }, p.description || ""), 140);
-    const tests = h("input", { class: "input mono", maxlength: "300", value: p.test_command || "", placeholder: t("np.tests.ph"), autocapitalize: "off", spellcheck: "false" });
+    const tests = h("input", { class: "input mono", value: p.test_command || "", placeholder: t("np.tests.ph"), autocapitalize: "off", spellcheck: "false" });
     const sel = h("select", { class: "input" }, S.bots.map((b) => h("option", { value: b.id, selected: b.id === p.bot }, b.name)));
     const btn = h("button", { class: "btn primary wide", type: "button" }, t("common.save"));
     const sh = sheet(p.name, [field(t("np.desc"), desc), field(t("np.tests"), tests), field(t("np.bot"), sel), btn]);
@@ -2113,7 +2115,7 @@
     const botField = field(t("ns.bot"), sel);
     botField.classList.toggle("hide", harness !== "bot");
     const draftKey = "new-session:" + p.id;
-    const prompt = keepDraft(autosize(h("textarea", { class: "input", rows: "4", maxlength: "8000", placeholder: t("ns.prompt.ph") }), 220), draftKey);
+    const prompt = keepDraft(autosize(h("textarea", { class: "input", rows: "4", placeholder: t("ns.prompt.ph") }), 220), draftKey);
     const btn = h("button", { class: "btn primary wide", type: "button" }, icon("play"), t("ns.start"));
     const sh = sheet(t("ns.title") + " · " + p.name, [field(t("ns.harness"), cards), botField, field(t("ns.prompt"), prompt), btn]);
     btn.addEventListener("click", async () => {
@@ -2212,7 +2214,7 @@
     sessEls.follow.classList.toggle("hide", running);
     if (!running && !sessEls.followTa) {
       const draftKey = "session:" + s.id;
-      const ta = keepDraft(autosize(h("textarea", { class: "composer-input", rows: "1", maxlength: "8000", placeholder: t("session.followup.ph") }), 140), draftKey);
+      const ta = keepDraft(autosize(h("textarea", { class: "composer-input", rows: "1", placeholder: t("session.followup.ph") }), 140), draftKey);
       const btn = h("button", { class: "send", type: "button", "aria-label": t("session.send") }, icon("send"));
       ta.addEventListener("input", () => btn.classList.toggle("ready", !!ta.value.trim()));
       btn.addEventListener("click", async () => {
@@ -3154,7 +3156,7 @@
     iniIn.addEventListener("input", face.refresh);
     const roleIn = autosize(h("textarea", { class: "input", rows: "2", maxlength: "300", placeholder: t("bot.role.ph") }, b.role || ""), 120);
     const callIn = h("input", { class: "input", maxlength: "32", value: b.call_user || "" });
-    const promptIn = autosize(h("textarea", { class: "input prompt-ta", rows: "8", maxlength: "8000", spellcheck: "false" }, b.system_prompt || ""), 420);
+    const promptIn = autosize(h("textarea", { class: "input prompt-ta", rows: "8", spellcheck: "false" }, b.system_prompt || ""), 420);
     const models = S.models || [];
     const defName = (S.routing || {}).chat || (S.routing || {}).default;
     const defModel = models.find((x) => x.name === defName);
@@ -3187,12 +3189,12 @@
   }
 
   function memoryCard(b) {
-    let text = "", limit = 4000;
+    let text = "", limit = 0;          // 0 = no size limit (the server's memory_chars)
     const list = h("div", { class: "mem-list" });
     const count = h("span", { class: "count-hint" });
-    const addIn = h("input", { class: "input", maxlength: "400", placeholder: t("bot.memory.add.ph"), enterkeyhint: "done" });
+    const addIn = h("input", { class: "input", placeholder: t("bot.memory.add.ph"), enterkeyhint: "done" });
     const addBtn = h("button", { class: "btn ghost", type: "button" }, icon("plus"), t("bot.memory.add"));
-    const raw = autosize(h("textarea", { class: "input mono", rows: "4", maxlength: "20000", spellcheck: "false" }), 320);
+    const raw = autosize(h("textarea", { class: "input mono", rows: "4", spellcheck: "false" }), 320);
     const rawSave = h("button", { class: "btn ghost", type: "button" }, icon("memory"), t("bot.memory.save"));
     const today = () => new Date().toISOString().slice(0, 10);
     const save = async (next) => {
@@ -3211,7 +3213,7 @@
             const rest = ls.filter((_, j) => j !== i).join("\n"); save(rest ? rest + "\n" : "");
           } }, icon("x"))));
       });
-      count.textContent = t("bot.memory.count", { n: chars(text), max: limit });
+      count.textContent = limit ? t("bot.memory.count", { n: chars(text), max: limit }) : t("bot.memory.chars", { n: chars(text) });
       raw.value = text; raw.dispatchEvent(new Event("input"));
     };
     const add = () => { const v = addIn.value.trim(); if (!v) return; addIn.value = ""; save((text.trim() ? text.trimEnd() + "\n" : "") + "- [" + today() + "] " + v + "\n"); };
@@ -3233,7 +3235,7 @@
       h("p", { class: "hint" }, t("bot.memory.hint")), list,
       h("div", { class: "mem-add" }, addIn, addBtn),
       h("div", { class: "mem-foot" }, h("details", { class: "mem-raw" }, h("summary", {}, t("bot.memory.raw")), raw, rawSave), tidyBtn, clearBtn));
-    const load = () => api("/api/bots/" + b.id + "/memory").then((j) => { text = j.memory || ""; limit = j.limit || limit; paint(); }).catch(() => {});
+    const load = () => api("/api/bots/" + b.id + "/memory").then((j) => { text = j.memory || ""; limit = j.limit || 0; paint(); }).catch(() => {});
     S.memoryCard = { bot: b.id, load };
     return { el, load };
   }
@@ -3264,14 +3266,16 @@
     const needOn = h("p", { class: "hint need-on" }, icon("bell"), h("span", {}, t("settings.notify.need_on")));
     const pushOn = (on) => { toggles.classList.toggle("off", !on); needOn.classList.toggle("hide", on); $$("input", toggles).forEach((x) => (x.disabled = !on)); };
     pushOn(false);
-    const you = autosize(h("textarea", { class: "input", rows: "3", maxlength: "1400", placeholder: t("settings.you.ph") }), 260);
+    const you = autosize(h("textarea", { class: "input", rows: "3", placeholder: t("settings.you.ph") }), 260);
     const youCount = h("span", { class: "count-hint" });
-    const youFit = () => (youCount.textContent = t("bot.memory.count", { n: chars(you.value), max: 1400 }));
+    let youMax = 0;                    // 0 = no size limit (the server's user_note_chars)
+    const youFit = () => (youCount.textContent = youMax ? t("bot.memory.count", { n: chars(you.value), max: youMax })
+      : t("bot.memory.chars", { n: chars(you.value) }));
     you.addEventListener("input", youFit);
     const youSave = h("button", { class: "btn ghost", type: "button", onclick: async () => {
       try { const j = await api("/api/profile", { text: you.value }); you.value = j.text; youFit(); toast(t("settings.you.saved")); } catch (e) { fail(e); }
     } }, icon("check"), t("common.save"));
-    api("/api/profile").then((j) => { you.value = j.text || ""; you.dispatchEvent(new Event("input")); youFit(); }).catch(() => {});
+    api("/api/profile").then((j) => { you.value = j.text || ""; youMax = j.limit || 0; you.dispatchEvent(new Event("input")); youFit(); }).catch(() => {});
     const body = h("div", { class: "page" },
       h("div", { class: "card form" }, h("h3", { class: "card-h" }, icon("globe"), t("settings.lang")), langSeg),
       h("div", { class: "card form" }, h("h3", { class: "card-h" }, icon("sun"), t("settings.theme")), themeSeg),

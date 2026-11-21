@@ -7,8 +7,10 @@
 - Runs inside the SnapLab server (no Windows Task Scheduler): a thread checks every 20 seconds. A run posts a short
   note into the bot's own chat and the bot answers there, behind the user's chats in the slot order (priority
   "session"). The phone is notified only when the bot needs the user (it then asks on a card).
-- When the PC was off at the time, a run that was missed by less than `tasks.catch_up_hours` (6) is done once
-  when SnapLab is back; older ones are skipped. A missed wake-up always runs once.
+- When the PC was off at the time, a missed run is done once when SnapLab is back, however late (until 2026-11-21
+  runs missed by more than 6 hours were skipped; `tasks.catch_up_hours` can still set such a limit). A missed
+  wake-up always runs once.
+- An "every" task may use any interval above 0 minutes; the scheduler looks every `check_s` (20) seconds.
 - data/tasks.json holds the tasks; every run is also in the raw archive through the messages of the chat.
 """
 from __future__ import annotations
@@ -17,12 +19,12 @@ import datetime as dt
 import re
 import threading
 
+from .config import limit
 from .store import new_id, now_iso
 
 DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
-MIN_MINUTES = 1
 TIME_RE = re.compile(r"^([01]?\d|2[0-3]):([0-5]\d)$")
-DEFAULTS = {"catch_up_hours": 6, "max_per_bot": 0, "max_total": 0, "check_s": 20}   # 0 = no limit
+DEFAULTS = {"catch_up_hours": 0, "max_per_bot": 0, "max_total": 0, "check_s": 20}   # 0 = no limit
 
 
 def _now() -> dt.datetime:
@@ -73,12 +75,12 @@ def clean_schedule(sch: dict) -> dict:
         return out
     if kind == "every":
         try:
-            minutes = int(sch.get("every_minutes") or sch.get("minutes") or 0)
+            minutes = float(sch.get("every_minutes") or sch.get("minutes") or 0)
         except (TypeError, ValueError):
             minutes = 0
-        if minutes < MIN_MINUTES:
-            raise ValueError(f"the shortest interval is {MIN_MINUTES} minutes")
-        return {"kind": "every", "every_minutes": min(minutes, 7 * 24 * 60)}
+        if not minutes > 0 or minutes == float("inf"):
+            raise ValueError("give every_minutes, a number above 0")
+        return {"kind": "every", "every_minutes": int(minutes) if minutes.is_integer() else minutes}
     raise ValueError("kind must be daily, weekly, every or once")
 
 
@@ -87,7 +89,7 @@ def next_run(sch: dict, after: dt.datetime) -> dt.datetime:
     if sch["kind"] == "once":
         return dt.datetime.fromisoformat(sch["at"])
     if sch["kind"] == "every":
-        return after + dt.timedelta(minutes=int(sch["every_minutes"]))
+        return after + dt.timedelta(minutes=float(sch["every_minutes"]))
     hh, mm = (int(x) for x in sch["time"].split(":"))
     day = after.replace(hour=hh, minute=mm, second=0, microsecond=0)
     for i in range(0, 9):
@@ -106,7 +108,10 @@ def describe(sch: dict) -> str:
         at = dt.datetime.fromisoformat(sch["at"]).astimezone()
         return f"once at {at.strftime('%H:%M')}" + ("" if at.date() == _now().date() else f" on {at.date().isoformat()}")
     if sch["kind"] == "every":
-        m = int(sch["every_minutes"])
+        m = float(sch["every_minutes"])
+        if not m.is_integer():
+            return f"every {m:g} minutes"
+        m = int(m)
         return f"every {m // 60} h {m % 60} min" if m % 60 and m >= 60 else (f"every {m // 60} hours" if m % 60 == 0 else f"every {m} minutes")
     if sch["kind"] == "weekly":
         return f"on {', '.join(d.capitalize() for d in sch['days'])} at {sch['time']}"
@@ -259,7 +264,7 @@ class Scheduler:
                 late = (now - due).total_seconds() / 3600
                 t["next_run"] = next_run(t["schedule"], now).isoformat(timespec="seconds")
                 changed = True
-                if late > float(self.cfg["catch_up_hours"]):
+                if late > limit(self.cfg["catch_up_hours"]):     # 0 (the default) = every missed run is caught up
                     t["missed"] = int(t.get("missed") or 0) + 1
                     continue
                 t["last_run"] = now.isoformat(timespec="seconds")

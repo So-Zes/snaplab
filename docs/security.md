@@ -256,10 +256,10 @@ save secrets, and writes after a web read wait for approval.
 
 ## Project permissions and bot conversations
 
-All bots can create and own several projects. Only the owner and lead may mutate a project or its sessions;
-explicit `shared_with` grants read-only access. Checks read current ownership, including before consuming
-an approval. Sharing grants project records, not the owner's private memory or one-to-one conversations.
-Removing a share or changing ownership immediately changes project-scoped archive access. Messages already
+All bots can create and own several projects, and since 2026-11-21 every bot may read and change every project
+and its sessions (before, only the owner and lead could change one, and `shared_with` granted reading only).
+Ownership and shares now only decide which projects a bot's context shows. Rooms are unchanged: a bot's recall
+still covers the rooms it is in, not other bots' one-to-one conversations. Messages already
 received in a shared room remain part of that room's visible conversation; sharing cannot erase knowledge.
 
 Successful external reads and explicit recall of web-derived material mark the current human-origin

@@ -4,7 +4,7 @@ from contextlib import nullcontext
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from helpers import make_app, onboard, wait_until
+from helpers import CARD_APPROVALS, make_app, onboard, wait_until
 from snaplab.chat import ChatManager, waits_for_user_in_text
 from snaplab.dialogue import DialogueLimits, session_origin
 from snaplab.harnesses.base import TurnResult
@@ -18,7 +18,8 @@ def call(tool, **arguments):
 
 class SessionReportTest(unittest.TestCase):
     def make(self, harness="bot", lang="en"):
-        app, llm, _ = make_app(recall={"rerank": False}, summary={"enabled": False})
+        # The session reports are followed to the approval cards that config can ask for (no cards by default).
+        app, llm, _ = make_app(recall={"rerank": False}, summary={"enabled": False}, approvals=CARD_APPROVALS)
         alpha = onboard(app, name="Alpha", lang=lang)["bot"]
         beta = app.create_bot(name="Beta")
         room = app.create_group("Research", [alpha["id"], beta["id"]])
@@ -193,17 +194,23 @@ class WaitingForUserTest(unittest.TestCase):
                 self.assertEqual(len(llm.calls), 4)
                 self.assertFalse(app.chat.dialogue.waiting_for_user(new["id"]))
 
-    def test_default_budget_is_six_and_explicit_setting_is_preserved(self):
-        counter = iter(range(30))
-        app, llm, _ = make_app(lambda *args: {"content": f"New idea {next(counter)}"}, summary={"enabled": False})
+    def test_default_has_no_budget_the_users_stop_ends_it_and_explicit_setting_is_preserved(self):
+        # Until 2026-11-21 the default stopped bots after 6 replies; now only the user's stop (or a config value) does.
+        import time
+        counter = iter(range(1000))
+        app, llm, _ = make_app(lambda *args: {"content": f"New idea {next(counter)}"}, summary={"enabled": False},
+                               bot_conversations={})                 # the real default, not the test budget
         alpha = onboard(app)["bot"]
         beta = app.create_bot(name="Beta")
         room = app.create_group("Ideas", [alpha["id"], beta["id"]])
-        self.assertEqual(app.cfg["bot_conversations"]["max_consecutive"], 6)
+        self.assertEqual(app.cfg["bot_conversations"]["max_consecutive"], 0)
+        self.assertEqual(app.chat.dialogue.settings()["max_consecutive"], float("inf"))
         app.chat.post(room["id"], "Discuss ideas")
+        self.assertTrue(wait_until(lambda: len(llm.calls) >= 12, 8))                 # beyond the old six
+        app.chat.post(room["id"], "stop")
         self.assertTrue(wait_until(lambda: all(q.unfinished_tasks == 0 for q in app.chat.queues.values()), 8))
-        self.assertEqual(len(llm.calls), 6)
-        app.cfg["bot_conversations"] = {}
-        self.assertEqual(app.chat.dialogue.settings()["max_consecutive"], 6)
-        app.cfg["bot_conversations"]["max_consecutive"] = 10
+        calls = len(llm.calls)
+        time.sleep(0.3)
+        self.assertEqual(len(llm.calls), calls)
+        app.cfg["bot_conversations"] = {"max_consecutive": 10}
         self.assertEqual(app.chat.dialogue.settings()["max_consecutive"], 10)

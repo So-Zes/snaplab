@@ -582,17 +582,23 @@ def read_page(url: str, *, max_bytes: int = 1_500_000, max_chars: int = 12000, r
     url = (url or "").strip()
     if redactor:
         url = redactor.clean(url)
-    for _ in range(6):            # follow at most 5 redirects, checking every hop
+    auth_header = {}
+    for _ in range(31):           # follow up to 30 redirects (a loop guard), checking every hop
         p = urllib.parse.urlparse(url)
         if p.scheme not in ("http", "https"):
             raise SearchError("blocked", "only http and https pages can be read")
-        if p.username or p.password:
-            raise SearchError("blocked", "URLs with a user name or password are not allowed")
+        auth_header = {}
+        if p.username is not None or p.password is not None:
+            # user:password@host is sent as HTTP Basic authentication to that host only (not along redirects).
+            import base64
+            pair = f"{urllib.parse.unquote(p.username or '')}:{urllib.parse.unquote(p.password or '')}"
+            auth_header = {"Authorization": "Basic " + base64.b64encode(pair.encode("utf-8")).decode("ascii")}
+            url = urllib.parse.urlunparse(p._replace(netloc=p.netloc.rsplit("@", 1)[-1]))
         if not resolver(p.hostname or ""):
             if resolver is host_is_public and host_status(p.hostname or "") == "unknown":
                 raise SearchError("network", f"{p.hostname} was not found: no such site, or the name could not be looked up")
             raise SearchError("blocked", "this address is local, private or on the tailnet; SnapLab only reads public pages")
-        status, headers, body, _ = _http(url, headers={"Accept": "text/html,text/plain;q=0.9,*/*;q=0.1"},
+        status, headers, body, _ = _http(url, headers={"Accept": "text/html,text/plain;q=0.9,*/*;q=0.1", **auth_header},
                                          max_bytes=max_bytes)
         if status in (301, 302, 303, 307, 308):
             loc = {k.lower(): v for k, v in headers.items()}.get("location")

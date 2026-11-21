@@ -312,7 +312,8 @@ class MemoryTidy:
             return "skipped"
         user = scope == "user"
         cur = app.store.user_note() if user else app.store.memory(bot_id)
-        limit = int(app.cfg.get("user_note_chars" if user else "memory_chars", 1400 if user else 4000))
+        from .config import limit as cap
+        limit = cap(app.cfg.get("user_note_chars" if user else "memory_chars"))      # 0 (the default) = no limit
         key = f"tidied:{'user' if user else bot_id}"
         changed_at = app.store.note_mtime(("shared", "user.md") if user else ("bots", bot_id, "memory.md"))
         last = self.state().get(key)
@@ -321,19 +322,22 @@ class MemoryTidy:
         if not cur.strip():
             return "skipped"
         from .prompts import lang_name
-        target = int(limit * 0.75)
+        # With a size limit the tidy aims at three quarters of it; without one it only merges and drops.
+        size = f"at most {int(limit * 0.75)} characters in total" if limit != float("inf") else "no longer than now"
         system = (f"You tidy the long-term memory notes {'about the user, kept by ' + bot['name'] if user else 'of the bot ' + bot['name']}.\n"
                   "Merge duplicates and near-duplicates, drop notes that are outdated, contradicted by a newer note, or no "
                   "longer useful, and keep every durable fact and preference. Never add anything new. Keep the date of "
                   "each note you keep ([YYYY-MM-DD]); a merged note keeps the newest date.\n"
                   f"Output only the notes, one per line as \"- [YYYY-MM-DD] text\" (or \"- text\" if it had no date), "
-                  f"at most {target} characters in total. Keep each note in the language it is written in "
+                  f"{size}. Keep each note in the language it is written in "
                   f"(the app language is {lang_name(app.lang)}).")
         llm = app.models.get(bot.get("model"), "background")
         inputs = [{"role": "system", "content": system}, {"role": "user", "content": cur}]
-        r = llm.stream_chat(inputs, tools=None, effort=c["effort"], max_tokens=2000, source="memory_tidy", kind="background")
+        r = llm.stream_chat(inputs, tools=None, effort=c["effort"], max_tokens=None if limit == float("inf") else 2000,
+                            source="memory_tidy", kind="background")
         new = "\n".join(ln.rstrip() for ln in (r.content or "").strip().splitlines() if ln.strip())
-        ok = bool(new) and len(new) <= limit and all(NOTE_RE.match(ln) for ln in new.splitlines())
+        most = limit if limit != float("inf") else max(len(cur), 1)          # without a limit: not longer than now
+        ok = bool(new) and len(new) <= most and all(NOTE_RE.match(ln) for ln in new.splitlines())
         if not ok:
             app.log(f"memory tidy for {bot['name']} ({scope}) not used: {len(new)} chars, format ok="
                     f"{all(NOTE_RE.match(ln) for ln in new.splitlines()) if new else False}")

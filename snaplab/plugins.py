@@ -63,6 +63,7 @@ class PluginContext:
     folder: Path | None
     lang: str
     read_web: bool
+    cancel: object = None          # a function that turns true when the turn is stopped (None: never)
 
     @property
     def guard(self):

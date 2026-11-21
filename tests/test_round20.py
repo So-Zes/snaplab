@@ -219,14 +219,17 @@ class Round20Test(unittest.TestCase):
         # The note is SnapLab's record, not new input that the bot still has to answer.
         self.assertTrue(self.app.chat.already_answered(room['id'], self.bot['id']))
 
-    def test_result_turn_does_not_continue_a_stopped_session(self):
+    def test_result_turn_may_continue_a_stopped_session(self):
+        # Since 2026-11-21 a bot may continue a session the user stopped, also from a result card.
         room = self.app.store.dm_room(self.bot['id'])
         with patch.object(self.app.sessions, '_start'), patch('snaplab.harnesses.remote.available', return_value=(True, '')):
             s = self.app.sessions.create(self.project, prompt='Build a game', started_by=self.bot['id'], room=room['id'])
             other = self.app.sessions.create(self.project, prompt='Other', started_by='user', room=room['id'])
         self.app.store.save_session({**self.app.store.session(other['id']), 'status': 'stopped'})
-        with self.assertRaises(ValueError), patch.object(self.app.sessions, '_start'):
-            self._result_turn(s, room).t_send_to_session(other['id'], 'Continue')
+        with patch.object(self.app.sessions, 'send') as send:
+            result = self._result_turn(s, room).t_send_to_session(other['id'], 'Continue')
+        self.assertFalse(result.stop)
+        send.assert_called_once()
 
     def test_bot_report_keeps_result_context_and_uses_notification(self):
         room = self.app.store.dm_room(self.bot['id'])
@@ -274,3 +277,17 @@ class Round20Test(unittest.TestCase):
             header, _ = proxy_tests.NamespaceProxyTest.http_request(self, owner, body)
             self.assertIn('409', header)
             self.assertEqual(upstream.call_count, 1)
+
+    def test_proxy_without_output_limit_leaves_the_reply_to_the_model(self):
+        # No configured reply limit by default (2026-11-21): the reply may use the room the context leaves, up to the
+        # model's own output limit (32,768 here), instead of the old 20,000 tokens.
+        self.assertEqual(self.app.cfg['api']['work_max_tokens'], 0)
+        owner = Translator(port=0, api_cfg=self.app.cfg['api'], slots=self.app.slots,
+                           key_fn=lambda: 'synthetic-upstream-key', token='test-token',
+                           log_path=Path(self.tmp.name)/'proxy.log', effort='low')
+        body = request_body()
+        body['stream'] = False
+        with patch('snaplab.proxy.open_request', return_value=sse([{'choices': [{'delta': {'content': 'Done'}, 'finish_reason': 'stop'}]}])) as upstream:
+            header, _ = proxy_tests.NamespaceProxyTest.http_request(self, owner, body)
+            self.assertIn('200', header)
+            self.assertEqual(json.loads(upstream.call_args.args[0].data)['max_tokens'], 32768)

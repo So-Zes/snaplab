@@ -19,7 +19,7 @@ class TextDesktopTest(unittest.TestCase):
                               ('ru', 'доступен интернет', 'Доступа к интернету нет')]:
             self.assertIn(yes, brief_text('Test', 'Desktop task', '', lang, ssh=True))
             self.assertNotIn(no, brief_text('Test', 'Desktop task', '', lang, ssh=True))
-            self.assertIn(no, brief_text('Test', 'Desktop task', '', lang))
+            self.assertNotIn(no, brief_text('Test', 'Desktop task', '', lang))      # no such rule since 2026-11-21
 
     def test_phrase_center_and_unicode(self):
         self.assertEqual(desktop.text_point([[word('Learn'), word('more', 60)]], 'Learn more'), (30, 40))

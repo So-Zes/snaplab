@@ -13,8 +13,9 @@ from urllib.parse import quote
 
 from .store import now_iso
 
-MAX_BYTES = 20 * 1024 * 1024
-MAX_ITEMS = 8
+# One delivered file may be as large as the worker's file transfer allows (remote_worker.MAX_FILE). There is no limit
+# on how many files a turn delivers (until 2026-11-21: 8 files of 20 MiB).
+MAX_BYTES = 4 * 1024 ** 3
 ID_RE = re.compile(r"f-[0-9a-f]{32}\Z")
 MANIFEST = ".snaplab/attachments.json"
 PASSIVE_CSP = "sandbox; default-src 'none'; frame-ancestors 'self'"
@@ -22,8 +23,8 @@ INSTRUCTIONS = """
 Deliver results to the user's phone, not PC file paths. Put an explicit JSON list in
 .snaplab/attachments.json, e.g. [{"path":"index.html","caption":"Interactive schedule"},
 {"path":"screenshot.png","caption":"Phone view"}]. SnapLab copies these files to private
-storage and attaches them to the result card after the turn. Use at most 8 files, 20 MiB each,
-relative paths inside this workspace, only files created or modified by this session.
+storage and attaches them to the result card after the turn. Use relative paths inside this
+workspace (up to 4 GiB a file), only files created or modified by this session.
 For a screenshot of a local HTML app, run:
 python .snaplab/capture.py index.html --output screenshot.png --width 390 --height 844
 The helper runs Edge/Chrome headlessly inside the existing Windows sandbox, with an isolated
@@ -156,12 +157,10 @@ class Attachments:
         hidden.mkdir(exist_ok=True)
         manifest = folder / MANIFEST
         with self.lock:
-            items = json.loads(read_local(folder, MANIFEST, 16384, internal=True).decode("utf-8-sig")) if manifest.exists() else []
+            items = json.loads(read_local(folder, MANIFEST, internal=True).decode("utf-8-sig")) if manifest.exists() else []
             if not isinstance(items, list):
                 raise ValueError("invalid manifest")
             items = [item for item in items if isinstance(item, dict) and item.get("path") != rel]
-            if len(items) >= MAX_ITEMS:
-                raise ValueError("at most 8 files can be attached per turn")
             items.append({"path": rel, "caption": str(caption)[:300]})
             manifest.write_text(json.dumps(items, ensure_ascii=False), encoding="utf-8")
 
@@ -266,9 +265,9 @@ class Attachments:
         if not (folder / MANIFEST).exists():
             return [], []
         try:
-            items = json.loads(read_local(folder, MANIFEST, 16384, internal=True).decode("utf-8-sig"))
-            if not isinstance(items, list) or len(items) > MAX_ITEMS:
-                raise ValueError("manifest must contain at most 8 files")
+            items = json.loads(read_local(folder, MANIFEST, internal=True).decode("utf-8-sig"))
+            if not isinstance(items, list):
+                raise ValueError("the manifest must be a JSON list")
         except (OSError, ValueError):
             return [], ["invalid_manifest"]
         out, errors = [], []

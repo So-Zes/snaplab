@@ -27,8 +27,8 @@ STATE = Path('/tmp/snaplab-desktop')
 
 
 def screen_size():
-    found = re.fullmatch(r'(\d{3,4})x(\d{3,4})', os.environ.get('SNAPLAB_SCREEN', ''))
-    if found and 640 <= int(found[1]) <= 3840 and 480 <= int(found[2]) <= 2160:
+    found = re.fullmatch(r'([1-9]\d*)x([1-9]\d*)', os.environ.get('SNAPLAB_SCREEN', ''))
+    if found:
         return int(found[1]), int(found[2])
     return 1024, 768
 
@@ -54,7 +54,7 @@ KEYS = {'enter': 'Return', 'return': 'Return', 'esc': 'Escape', 'escape': 'Escap
 MODIFIERS = {'ctrl', 'alt', 'shift', 'super'}
 
 
-def run(*args, timeout=15, **kw):
+def run(*args, timeout=None, **kw):          # no time limit: stopping the turn ends a stuck command
     return subprocess.run(list(args), check=True, stdout=subprocess.PIPE,
                           stderr=subprocess.DEVNULL, timeout=timeout, **kw).stdout
 
@@ -72,7 +72,7 @@ def ocr(im, scale=1, tsv=False):
         im = im.resize((im.width*scale, im.height*scale))
     stream = io.BytesIO(); im.save(stream, format='PNG')
     return run('tesseract', 'stdin', 'stdout', '-l', 'eng+jpn', '--psm', '11', *(['tsv'] if tsv else []),
-               input=stream.getvalue(), timeout=60).decode('utf-8', 'replace')
+               input=stream.getvalue()).decode('utf-8', 'replace')
 
 
 def digest(im):
@@ -87,11 +87,9 @@ def user_has_browser():
 
 
 def wait_for_user():
-    """While the user has taken over the browser in SnapLab, input waits (up to 15 minutes) until they hand it back."""
+    """While the user has taken over the browser in SnapLab, input waits until they hand it back (no time limit)."""
     started = time.monotonic()
     while user_has_browser():
-        if time.monotonic() - started > 900:
-            raise ValueError('The user still has control of the browser after 15 minutes; do other work or ask them.')
         time.sleep(1)
     waited = time.monotonic() - started
     return f'The user used the browser for {round(waited)} s while you waited; look at the screen again.' if waited > 1 else None
@@ -188,7 +186,7 @@ def settle(minimum, limit=3.0):
 
 def pointer():
     try:
-        raw = subprocess.run(['xdotool', 'getmouselocation', '--shell'], capture_output=True, timeout=5).stdout.decode()
+        raw = subprocess.run(['xdotool', 'getmouselocation', '--shell'], capture_output=True).stdout.decode()
         values = dict(line.split('=', 1) for line in raw.split() if '=' in line)
         return [int(values['X']), int(values['Y'])]
     except Exception:
@@ -253,7 +251,7 @@ def page_elements():
         if not json.loads(live.read_text(encoding='utf-8')).get('headful'):
             return []
         done = subprocess.run(['node', str(Path.cwd() / '.snaplab' / 'browser.mjs'), 'do', 'elements', '--no-shot'],
-                              capture_output=True, timeout=60)
+                              capture_output=True)
         found = json.loads(done.stdout)['steps'][0]['value']
     except (OSError, ValueError, KeyError, IndexError, TypeError, subprocess.TimeoutExpired):
         return []
@@ -628,7 +626,7 @@ def keysym(name):
 
 def key_tokens(keys):
     """'ctrl+shift+i' -> ['ctrl+shift+i']; 'Tab Tab Return' -> three keys; 'ctrl s' -> ['ctrl+s']."""
-    if not keys or len(keys) > 300 or '\0' in keys:
+    if not keys or '\0' in keys:
         raise ValueError('Invalid key sequence')
     tokens = keys.split()
     if len(tokens) > 1 and all(keysym(k) in MODIFIERS for k in tokens[:-1]):
@@ -717,12 +715,12 @@ def launch(args):
         if not helper.is_file():
             raise ValueError('Run this from the job folder (it has .snaplab/browser.mjs)')
         start = ['node', str(helper), 'start', '--headful'] + (['--devtools'] if args.devtools else [])
-        result = subprocess.run(start, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=90)
+        result = subprocess.run(start, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         if result.returncode != 0:
             raise RuntimeError('Chrome did not start: ' + result.stdout.decode('utf-8', 'replace')[-600:])
         if args.url:
             opened = subprocess.run(['node', str(helper), 'open', args.url, '--no-shot'], stdout=subprocess.PIPE,
-                                    stderr=subprocess.STDOUT, timeout=180)
+                                    stderr=subprocess.STDOUT)
             if opened.returncode != 0:
                 raise RuntimeError('Chrome could not open the page: ' + opened.stdout.decode('utf-8', 'replace')[-600:])
         time.sleep(1)
@@ -740,11 +738,8 @@ def launch(args):
         command.append(args.url)
     request = STATE / ('launch-' + secrets.token_hex(12) + '.json')
     request.write_text(json.dumps({'cmd': command, 'cwd': str(Path.cwd())}), encoding='utf-8')
-    deadline = time.monotonic() + 10
-    while request.exists() and time.monotonic() < deadline:
+    while request.exists():                 # the launch supervisor takes the request (no time limit)
         time.sleep(.1)
-    if request.exists():
-        raise RuntimeError('Desktop launch supervisor did not respond')
     time.sleep(2)
 
 
@@ -755,8 +750,8 @@ def zoom(args):
     point(args)
     box = (args.x, args.y, min(SIZE[0], args.x + args.width), min(SIZE[1], args.y + args.height))
     region = screenshot().crop(box)
-    scale = args.scale or max(1.0, min(4.0, SIZE[0] / region.width, SIZE[1] / region.height))
-    scale = max(1.0, min(8.0, scale))
+    scale = args.scale if args.scale and args.scale > 0 else max(1.0, min(4.0, SIZE[0] / region.width,
+                                                                         SIZE[1] / region.height))
     big = region.resize((round(region.width*scale), round(region.height*scale)), Image.LANCZOS)
     target = inside(args.output if args.output != 'desktop.png' else 'zoom.png')
     save_png(gridded(big, box[:2], scale) if args.grid else big, target)
@@ -890,27 +885,25 @@ def control(args):
         where = point(args, required=False)
         move = ['mousemove', str(where[0]), str(where[1])] if where else []
         button = {'up': '4', 'down': '5', 'left': '6', 'right': '7'}[args.direction]
-        run('xdotool', *move, 'click', '--repeat', str(max(1, min(args.amount, 200))), '--delay', '40', button,
-            timeout=30)
+        run('xdotool', *move, 'click', '--repeat', str(max(1, args.amount)), '--delay', '40', button)
     elif a == 'type':
-        if len(args.text) > 20000 or '\0' in args.text:
-            raise ValueError('Text too long or invalid')
+        if '\0' in args.text:
+            raise ValueError('Text with a NUL character cannot be typed')
         if not args.paste and all(32 <= ord(c) < 127 or c in '\n\t' for c in args.text):
             # Real key presses: games, key listeners and password fields see ordinary typing.
             for part in re.split('([\n\t])', args.text):
                 if part in ('\n', '\t'):
                     keyboard(combo('Return' if part == '\n' else 'Tab'))
                 elif part:
-                    run('xdotool', 'type', '--clearmodifiers', '--delay', '12', '--', part,
-                        timeout=15 + len(part) * 0.05)
+                    run('xdotool', 'type', '--clearmodifiers', '--delay', '12', '--', part)
         else:
             # Clipboard paste supports Japanese without relying on keyboard layout.
             subprocess.run(['xclip', '-selection', 'clipboard'], input=args.text.encode('utf-8'),
-                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5, check=True)
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
             keyboard(combo('ctrl+v'))
     elif a == 'key':
         tokens = key_tokens(args.keys)
-        for _ in range(max(1, min(args.repeat, 500))):
+        for _ in range(max(1, args.repeat)):
             for token in tokens:
                 keyboard(combo(token))
                 time.sleep(0.04)
@@ -921,11 +914,11 @@ def control(args):
         keys = [k for token in key_tokens(args.keys) for k in token.split('+')]
         keyboard([(k, True) for k in keys])
         try:
-            time.sleep(max(0.05, min(args.seconds, 600)))
+            time.sleep(max(0.05, args.seconds))
         finally:
             keyboard([(k, False) for k in reversed(keys)])
     elif a == 'wait':
-        time.sleep(max(0, min(args.seconds, 600)))
+        time.sleep(max(0, args.seconds))
     elif a in ('windows', 'focus'):
         ids = run('xdotool', 'search', '--onlyvisible', '--name', '.*').decode().split()
         found = []

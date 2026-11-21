@@ -66,17 +66,16 @@ class Round13Test(unittest.TestCase):
         self.assertFalse(self.box.t_update_dashboard('remove', ids=['sample']).stop)
         self.app.cfg['approvals'] = {'update_dashboard': 'always'}
         self.assertTrue(self.box.t_update_dashboard('upsert', widgets=[{'id': 'sample', 'type': 'note', 'title': 'Sample', 'text': 'Synthetic'}]).stop)
-    def test_server_commands_rejected_before_project_creation(self):
-        for command in ('python -m http.server 8080', 'python3 -m http.server',
-                        'npm run dev', 'npm start', 'npx vite --host', 'flask run',
-                        'uvicorn app:app', 'pytest --watch', 'python manage.py runserver'):
-            with self.subTest(command=command), self.assertRaisesRegex(ValueError, 'finish|server|watch'):
-                self.app.create_project(name='invalid-server', test_command=command)
-        self.assertFalse(self.app.store.project('invalid-server'))
-        self.assertFalse((self.folder.parent / 'invalid-server').exists())
-        with self.assertRaises(ValueError):
-            self.app.update_project(self.project['id'], {'test_command': 'npm run dev'})
-        self.assertEqual(self.app.store.project(self.project['id'])['test_command'], '')
+    def test_any_test_command_is_accepted(self):
+        # Since 2026-11-21 server and watch commands and long commands are accepted as the project's test command.
+        long = 'python -m unittest ' + ' '.join(f'tests.test_{i}' for i in range(60))
+        self.assertGreater(len(long), 300)
+        for i, command in enumerate(('python -m http.server 8080', 'npm run dev', 'pytest --watch', long)):
+            with self.subTest(command=command[:40]):
+                p = self.app.create_project(name=f'any-command-{i}', test_command=command)
+                self.assertEqual(p['test_command'], command)
+        self.app.update_project(self.project['id'], {'test_command': 'npm run dev'})
+        self.assertEqual(self.app.store.project(self.project['id'])['test_command'], 'npm run dev')
 
     def test_test_outcomes_are_distinct(self):
         self.assertEqual(parse_tests(None, 'stopped', timed_out=True)['status'], 'timeout')
@@ -102,26 +101,28 @@ class Round13Test(unittest.TestCase):
         descriptions = {t['function']['name']: t['function']['description'] for t in self.box.schemas()}
         self.assertIn('its own task history', descriptions['send_to_session'])
 
-    def test_ssh_approval_scope_and_overrides(self):
-        self.app.cfg['codex']['backend'] = 'ssh'
-        for group in (False, True):
-            self.room['kind'] = 'group' if group else 'dm'
-            box = Toolbox(self.app, self.bot, room=self.room)
-            box.read_web = True
-            for action in ('start_session', 'create_project', 'update_dashboard', 'write_brief'):
-                self.assertIsNone(box._needs_approval({'type': action}, action))
-            for action in ('create_bot', 'schedule_task', 'write_memory', 'message_bot', 'create_group', 'assign_project', 'share_project'):
-                self.assertIsNotNone(box._needs_approval({'type': action}, action))
-            for backend in ('ssh', 'local', None):
-                self.session['execution_backend'] = backend
-                self.app.store.save_session(self.session)
-                self.assertEqual(box._needs_approval({'type': 'send_to_session', 'session': self.session['id']}, 'send') is None, backend == 'ssh')
-        self.app.cfg['approvals'] = {'start_session': 'always'}
+    def test_no_card_by_default_on_any_backend_and_overrides(self):
+        # Since 2026-11-21 no action shows a card unless config "approvals" asks, on every backend.
+        for backend_cfg in ('ssh', 'local'):
+            self.app.cfg['codex']['backend'] = backend_cfg
+            for group in (False, True):
+                self.room['kind'] = 'group' if group else 'dm'
+                box = Toolbox(self.app, self.bot, room=self.room)
+                box.read_web = True
+                for action in ('start_session', 'create_project', 'update_dashboard', 'write_brief', 'create_bot',
+                               'schedule_task', 'write_memory', 'message_bot', 'create_group', 'assign_project',
+                               'share_project', 'some_future_action'):
+                    self.assertIsNone(box._needs_approval({'type': action}, action), action)
+                for backend in ('ssh', 'local', None):
+                    self.session['execution_backend'] = backend
+                    self.app.store.save_session(self.session)
+                    self.assertIsNone(box._needs_approval({'type': 'send_to_session', 'session': self.session['id']}, 'send'))
+        self.app.cfg['approvals'] = {'start_session': 'always', 'create_project': 'after_web'}
         self.assertEqual(approval_policy(self.app.cfg, 'start_session'), 'always')
-        self.app.cfg['codex']['backend'] = 'local'
         self.assertEqual(approval_policy(self.app.cfg, 'create_project'), 'after_web')
+        self.assertEqual(approval_policy(self.app.cfg, 'write_brief'), 'never')
 
-    def test_ssh_group_followup_has_no_card_but_local_keeps_card(self):
+    def test_group_followup_has_no_card_on_any_backend(self):
         self.app.cfg['codex']['backend'] = 'ssh'
         self.room['kind'] = 'group'
         self.box = Toolbox(self.app, self.bot, room=self.room)
@@ -131,8 +132,8 @@ class Round13Test(unittest.TestCase):
             self.app.store.save_session(self.session)
             with patch.object(self.app.sessions, 'send') as send:
                 result = self.box.t_send_to_session(self.session['id'], 'Continue')
-                self.assertEqual(result.stop, backend == 'local')
-                self.assertEqual(send.called, backend == 'ssh')
+                self.assertFalse(result.stop)                       # a local session no longer forces a card either
+                self.assertTrue(send.called)
 
     def test_attachment_failure_names_file_and_reason(self):
         self.produced('screenshot.png', b'\x89PNG\r\n\x1a\nsynthetic')

@@ -700,7 +700,7 @@ def run(req, folder, home):
             Path(codex_home, 'keep.py').write_text(req['helpers']['keep.py'], encoding='utf-8')
         launch = ["/bin/sh", "-c", 'mkdir -p /tmp/codex; cp /codex-config/* /tmp/codex/; exec ' + keep + '"$@"', "snaplab", *cmd]
         if req.get('desktop', False):
-            if re.fullmatch(r'\d{3,4}x\d{3,4}', str(req.get('screen') or '')):
+            if re.fullmatch(r'[1-9]\d*x[1-9]\d*', str(req.get('screen') or '')):
                 env['SNAPLAB_SCREEN'] = req['screen']
             env.update(XDG_RUNTIME_DIR=f'/run/user/{os.getuid()}',
                        DBUS_SESSION_BUS_ADDRESS=f'unix:path=/run/user/{os.getuid()}/bus')
@@ -786,7 +786,7 @@ def host_job(req, folder, home, stop):
                    "LANG": "C.UTF-8", "PYTHONDONTWRITEBYTECODE": "1",
                    "XDG_RUNTIME_DIR": f"/run/user/{os.getuid()}",
                    "DBUS_SESSION_BUS_ADDRESS": f"unix:path=/run/user/{os.getuid()}/bus"}
-            if re.fullmatch(r"\d{3,4}x\d{3,4}", str(req.get("screen") or "")):
+            if re.fullmatch(r"[1-9]\d*x[1-9]\d*", str(req.get("screen") or "")):
                 env["SNAPLAB_SCREEN"] = req["screen"]
             if os.environ.get("SNAPLAB_WSL") == "1":
                 env["SNAPLAB_EGRESS_TOKEN"] = req["token"]

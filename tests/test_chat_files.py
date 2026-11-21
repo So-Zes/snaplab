@@ -210,10 +210,11 @@ class ChatFilesTest(unittest.TestCase):
         self.assertEqual(Image.open(io.BytesIO(base64.b64decode(res.images[0]["data"]))).size, (400, 300))
         res = box("read_attachment", {"file": image["id"], "region": [5000, 0, 10, 10]}, "c3")
         self.assertTrue(res.content.startswith("Error"))
+        # Any bot may read a file the user sent, also from another chat (2026-11-21).
         stranger = self.app.create_bot(name="Stranger", role="other")
         res = Toolbox(self.app, stranger, room=self.app.store.dm_room(stranger["id"]), lang="en")(
             "read_attachment", {"file": long["id"]}, "c4")
-        self.assertTrue(res.content.startswith("Error"))
+        self.assertFalse(res.content.startswith("Error"))
 
     def test_tool_images_reach_the_api_model_after_the_results(self):
         calls = []

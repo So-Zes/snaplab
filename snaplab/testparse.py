@@ -5,20 +5,9 @@ import re
 
 
 def validate_test_command(command: str) -> str:
-    """Reject known persistent servers/watchers; arbitrary programs still have a timeout."""
-    command = (command or "").strip()
-    if len(command) > 300:
-        raise ValueError("the test command is limited to 300 characters")
-    persistent = (r"\b(?:http\.server|SimpleHTTPServer|http-server|uvicorn|gunicorn)\b|"
-                  r"\b(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?(?:dev|start|serve|watch)\b|"
-                  r"\b(?:vite|next|nuxt)\b(?!\s+(?:build|test)\b)|"
-                  r"\bflask\s+run\b|\bmanage\.py\s+runserver\b|"
-                  r"(?:^|\s)--watch(?:[=\s]|$)|\bwhile\s+(?:true|1)\b")
-    if re.search(persistent, command, re.I):
-        raise ValueError("Tests must finish and exit. A server or watch command cannot be a test command; "
-                         "leave it empty, or use a finite check such as python -m unittest. "
-                         "Start a preview server separately inside the session only when needed.")
-    return command
+    """The project's test command, trimmed. Any command is accepted (until 2026-11-21 commands over 300 characters
+    and server or watch commands were refused); a run that does not end waits until the session is stopped."""
+    return (command or "").strip()
 
 
 def parse_tests(code: int | None, out: str, *, timed_out: bool = False) -> dict:

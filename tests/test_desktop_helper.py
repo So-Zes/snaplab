@@ -99,8 +99,11 @@ class DesktopInputTest(unittest.TestCase):
     def test_screen_size_comes_from_the_job(self):
         with patch.dict('os.environ', {'SNAPLAB_SCREEN': '1280x800'}):
             self.assertEqual(desktop.screen_size(), (1280, 800))
-        with patch.dict('os.environ', {'SNAPLAB_SCREEN': '99999x1'}):
-            self.assertEqual(desktop.screen_size(), (1024, 768))
+        with patch.dict('os.environ', {'SNAPLAB_SCREEN': '5120x2880'}):      # any size since 2026-11-21
+            self.assertEqual(desktop.screen_size(), (5120, 2880))
+        for bad in ('0x768', 'big', ''):
+            with patch.dict('os.environ', {'SNAPLAB_SCREEN': bad}):
+                self.assertEqual(desktop.screen_size(), (1024, 768))
 
     def test_password_and_captcha_screens_do_not_stop_input_but_card_entry_does(self):
         with tempfile.TemporaryDirectory() as tmp, patch.object(desktop, 'STATE', Path(tmp)), \

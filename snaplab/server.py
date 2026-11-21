@@ -108,7 +108,7 @@ class Handler(BaseHTTPRequestHandler):
     sys_version = ""
     protocol_version = "HTTP/1.1"
     app = None
-    BODY_LIMIT = 256_000
+    BODY_LIMIT = 64 * 1024 * 1024     # memory guard for one JSON request (was 256 KB; messages have no length limit)
 
     # ------------------------------------------------------------ helpers
 
@@ -429,7 +429,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json(404, {"ok": False, "error": "no such bot"})
                 return
             self.send_json(200, {"ok": True, "memory": app.store.memory(m.group(1)),
-                                 "limit": int(app.cfg.get("memory_chars", 4000))})
+                                 "limit": int(app.cfg.get("memory_chars") or 0)})          # 0 = no limit
         elif m := re.fullmatch(rf"/api/rooms/({ID})/summary", path):
             if not app.store.room(m.group(1)):
                 self.send_json(404, {"ok": False, "error": "no such room"})
@@ -438,7 +438,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(200, {"ok": True, "text": text, "meta": meta, "pending": len(app.summaries.pending(m.group(1))),
                                  "running": m.group(1) in app.summaries.running})
         elif path == "/api/profile":
-            self.send_json(200, {"ok": True, "text": app.store.user_note(), "limit": int(app.cfg.get("user_note_chars", 1400))})
+            self.send_json(200, {"ok": True, "text": app.store.user_note(), "limit": int(app.cfg.get("user_note_chars") or 0)})
         elif m := re.fullmatch(rf"/api/projects/({ID})/brief", path):
             p = app.store.project(m.group(1))
             if not p:
@@ -822,8 +822,9 @@ class Handler(BaseHTTPRequestHandler):
             if not app.store.bot(m.group(1)):
                 raise LookupError("no such bot")
             text = s("text")
-            if len(text) > 20000:
-                raise ValueError("memory is limited to 20000 characters")
+            limit = int(app.cfg.get("memory_chars") or 0)            # 0 (the default) = no limit
+            if limit and len(text) > limit:
+                raise ValueError(f"memory is limited to {limit} characters")
             app.store.write_memory(m.group(1), text, "replace")
             app.store.memory_log(m.group(1), "the user edited this memory")
             app.archive_memory(m.group(1))
@@ -845,8 +846,8 @@ class Handler(BaseHTTPRequestHandler):
             return {"started": True}
         if path == "/api/profile":
             text = s("text")
-            limit = int(app.cfg.get("user_note_chars", 1400))
-            if len(text) > limit:
+            limit = int(app.cfg.get("user_note_chars") or 0)          # 0 (the default) = no limit
+            if limit and len(text) > limit:
                 raise ValueError(f"keep it under {limit} characters")
             app.store.save_note_file(("shared", "user.md"), (text.strip() + "\n") if text.strip() else "")
             app.store.memory_log("_user", "the user edited the notes about themselves")

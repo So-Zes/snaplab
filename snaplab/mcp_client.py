@@ -11,21 +11,22 @@ config.json:
                 "bearer_env": "NOTES_TOKEN",                                     # optional Authorization header
                  "untrusted": true,                                              # results are outside material
                  "chat": true,                                                   # false: SnapCode only (default true)
-                 "timeout_s": 30}
+                 "timeout_s": 0}                                                 # 0 (default) = no time limit
     }
 
 Chat bots and SnapCode (sessions: Codex, Pi and "bot" sessions) both get the tools. A chat bot can still hand big
 jobs to SnapCode to keep its own context small, for example when the user asks for that. "chat": false keeps a server
-for SnapCode only; chat bots are then just told it exists. Sessions run unattended, so tools that would need a
-proposal card are not offered there.
+for SnapCode only; chat bots are then just told it exists. Sessions run unattended, so a tool that config sets to
+"always" (a proposal card) is not offered there.
 
 Two kinds of servers: Streamable HTTP ("url", JSON or SSE responses) and stdio ("command" and "args", the form most
 MCP servers document for Claude Code, Codex and other clients). A stdio server runs on this PC as the user, started on
 first use and kept running; servers added in Settings live in <data>/mcp_servers.json (mcp_admin.py) with their
 secret environment values in the OS credential store. Each tool becomes a bot tool named
-`<server>_<tool>`. Approval defaults: tools run directly, except tools the server marks destructiveHint, which
-show a proposal card first ("always"). A per-tool entry, or the global "approvals" block, overrides that. Results are wrapped as
-untrusted material by default, so later protected actions in the same conversation ask the user first.
+`<server>_<tool>`. Every tool runs directly by default, also the ones the server marks destructiveHint (until
+2026-11-21 those waited for a card). A per-tool entry, or the global "approvals" block, can ask for a card. Results
+are wrapped as untrusted material by default. A call waits without a time limit unless timeout_s is set; stopping
+the turn ends the wait.
 
 The tool list is cached in <data>/mcp_tools.json, so a server that is down when SnapLab starts still has its
 tools; calling them while it is down returns an error to the bot instead of breaking the turn.
@@ -45,7 +46,7 @@ import urllib.request
 from pathlib import Path
 
 from .plugins import NAME_RE, APPROVALS, PluginTool
-from .provider_protocol import open_request
+from .provider_protocol import RequestCancelled, open_request
 
 PROTOCOL = "2025-06-18"
 SERVER_RE = re.compile(r"^[a-z][a-z0-9]{1,15}$")
@@ -81,8 +82,8 @@ class _Tools:
                 break
         return tools
 
-    def call_tool(self, tool: str, args: dict) -> tuple[str, bool]:
-        result = self.call("tools/call", {"name": tool, "arguments": args})
+    def call_tool(self, tool: str, args: dict, cancel=None) -> tuple[str, bool]:
+        result = self.call("tools/call", {"name": tool, "arguments": args}, cancel=cancel)
         parts = []
         for item in result.get("content") or []:
             if not isinstance(item, dict):
@@ -107,17 +108,18 @@ class _Tools:
 class MCPClient(_Tools):
     """A small Streamable HTTP client: initialize once, then tools/list and tools/call."""
 
-    def __init__(self, name: str, url: str, *, token: str | None = None, timeout_s: float = 30):
+    def __init__(self, name: str, url: str, *, token: str | None = None, timeout_s: float | None = 0):
         if not str(url).startswith(("http://", "https://")):
             raise MCPError(f"MCP server {name!r} needs an http(s) url")
-        self.name, self.url, self.token, self.timeout_s = name, url, token, float(timeout_s)
+        from .config import wait_s
+        self.name, self.url, self.token, self.timeout_s = name, url, token, wait_s(timeout_s)   # None = no limit
         self.session_id: str | None = None
         self.ready = False
         self.instructions = ""
         self._id = 0
         self._lock = threading.Lock()
 
-    def _post(self, payload: dict, expect_reply: bool = True):
+    def _post(self, payload: dict, expect_reply: bool = True, cancel=None):
         headers = {"Content-Type": "application/json", "Accept": "application/json, text/event-stream",
                    "MCP-Protocol-Version": PROTOCOL}
         if self.session_id:
@@ -126,7 +128,7 @@ class MCPClient(_Tools):
             headers["Authorization"] = "Bearer " + self.token
         req = urllib.request.Request(self.url, data=json.dumps(payload).encode(), headers=headers, method="POST")
         try:
-            with open_request(req, timeout=self.timeout_s) as resp:
+            with open_request(req, timeout=self.timeout_s, cancel=cancel) as resp:
                 sid = resp.headers.get("Mcp-Session-Id")
                 if sid:
                     self.session_id = sid
@@ -138,7 +140,11 @@ class MCPClient(_Tools):
                 self.session_id, self.ready = None, False
                 raise _Expired() from None
             raise MCPError(f"{self.name} answered HTTP {e.code}") from None
-        except (urllib.error.URLError, OSError) as e:
+        except RequestCancelled:
+            raise MCPError(f"the call to {self.name} was stopped") from None
+        except (urllib.error.URLError, OSError, ValueError) as e:
+            if cancel and cancel():
+                raise MCPError(f"the call to {self.name} was stopped") from None
             raise MCPError(f"{self.name} is not reachable ({getattr(e, 'reason', e)})") from None
         if not expect_reply:
             return None
@@ -154,9 +160,9 @@ class MCPClient(_Tools):
                 return msg.get("result") or {}
         raise MCPError(f"{self.name} sent no answer")
 
-    def _request(self, method: str, params: dict | None = None) -> dict:
+    def _request(self, method: str, params: dict | None = None, cancel=None) -> dict:
         self._id += 1
-        return self._post({"jsonrpc": "2.0", "id": self._id, "method": method, "params": params or {}})
+        return self._post({"jsonrpc": "2.0", "id": self._id, "method": method, "params": params or {}}, cancel=cancel)
 
     def _initialize(self) -> None:
         result = self._request("initialize", {"protocolVersion": PROTOCOL, "capabilities": {},
@@ -168,13 +174,13 @@ class MCPClient(_Tools):
             pass        # stateless servers may refuse notifications; tools still work
         self.ready = True
 
-    def call(self, method: str, params: dict | None = None) -> dict:
+    def call(self, method: str, params: dict | None = None, cancel=None) -> dict:
         with self._lock:
             for attempt in (0, 1):
                 try:
                     if not self.ready:
                         self._initialize()
-                    return self._request(method, params)
+                    return self._request(method, params, cancel=cancel)
                 except _Expired:
                     if attempt:
                         raise MCPError(f"{self.name} keeps dropping the session") from None
@@ -188,11 +194,12 @@ class StdioMCPClient(_Tools):
     roots, sampling) get a ping reply or "not supported"."""
 
     def __init__(self, name: str, command: str, args=(), *, env: dict | None = None, cwd: str | None = None,
-                 timeout_s: float = 30):
+                 timeout_s: float | None = 0):
         if not command:
             raise MCPError(f"MCP server {name!r} needs a command")
+        from .config import wait_s
         self.name, self.command, self.args = name, str(command), [str(a) for a in args or []]
-        self.env, self.cwd, self.timeout_s = dict(env or {}), cwd, float(timeout_s)
+        self.env, self.cwd, self.timeout_s = dict(env or {}), cwd, wait_s(timeout_s)        # None = no limit
         self.proc: subprocess.Popen | None = None
         self.ready = False
         self.instructions = ""
@@ -256,7 +263,7 @@ class StdioMCPClient(_Tools):
         tail = " | ".join(list(self.stderr_tail)[-3:])
         return f"{self.name} stopped" + (f": {tail}" if tail else "")
 
-    def _send(self, payload: dict, expect_reply: bool = True):
+    def _send(self, payload: dict, expect_reply: bool = True, cancel=None):
         proc = self.proc
         try:
             self._write(proc, payload)
@@ -264,12 +271,15 @@ class StdioMCPClient(_Tools):
             raise MCPError(self._gone()) from None
         if not expect_reply:
             return None
-        deadline = time.monotonic() + self.timeout_s
+        # No time limit unless timeout_s is set; a stopped turn (cancel) stops waiting.
+        deadline = time.monotonic() + self.timeout_s if self.timeout_s else None
         with self._cond:
             while payload["id"] not in self._replies:
                 if proc.poll() is not None:
                     raise MCPError(self._gone())
-                left = deadline - time.monotonic()
+                if cancel and cancel():
+                    raise MCPError(f"the call to {self.name} was stopped")
+                left = deadline - time.monotonic() if deadline is not None else 1.0
                 if left <= 0:
                     raise MCPError(f"{self.name} did not answer within {int(self.timeout_s)} s")
                 self._cond.wait(min(left, 1.0))
@@ -278,7 +288,7 @@ class StdioMCPClient(_Tools):
             raise MCPError(f"{self.name}: {(msg['error'] or {}).get('message') or 'error'}")
         return msg.get("result") or {}
 
-    def call(self, method: str, params: dict | None = None) -> dict:
+    def call(self, method: str, params: dict | None = None, cancel=None) -> dict:
         with self._lock:
             if self.proc is None or self.proc.poll() is not None:
                 self._start()
@@ -291,7 +301,8 @@ class StdioMCPClient(_Tools):
                 self._send({"jsonrpc": "2.0", "method": "notifications/initialized"}, expect_reply=False)
                 self.ready = True
             self._id += 1
-            return self._send({"jsonrpc": "2.0", "id": self._id, "method": method, "params": params or {}})
+            return self._send({"jsonrpc": "2.0", "id": self._id, "method": method, "params": params or {}},
+                              cancel=cancel)
 
     def close(self) -> None:
         proc, self.proc = self.proc, None
@@ -333,9 +344,8 @@ def tool_name(server: str, tool: str) -> str:
 
 
 def default_approval(spec: dict) -> str:
-    """Bots use MCP tools freely; only tools the server marks destructive (irreversible) wait for a card."""
-    ann = spec.get("annotations") or {}
-    return "always" if ann.get("destructiveHint") is True and ann.get("readOnlyHint") is not True else "never"
+    """Bots use every MCP tool freely, also the ones the server marks destructive; config can ask for a card."""
+    return "never"
 
 
 def _schema(spec: dict) -> dict:
@@ -369,7 +379,7 @@ def make_tools(server: str, client: MCPClient, specs: list[dict], conf: dict, re
         desc = (f"[{title}] " + str(spec.get("description") or spec.get("title") or raw)).strip()[:1000]
 
         def run(ctx, _raw=raw, **args):
-            text, failed = client.call_tool(_raw, args)
+            text, failed = client.call_tool(_raw, args, cancel=getattr(ctx, "cancel", None))
             if failed:
                 raise ValueError(text or f"{server} reported an error")
             return text or "(empty result)"
@@ -395,8 +405,8 @@ def servers(plugin_tools: dict) -> dict[str, dict]:
 
 
 def unattended_ok(app, tool) -> bool:
-    """Sessions run unattended: tools that would wait for a proposal card (destructive ones, or ones set to
-    "always" in config) are not offered there instead of running unasked."""
+    """Sessions run unattended: a tool that config sets to "always" (a proposal card) is not offered there instead
+    of running unasked. Destructive tools are offered like the others (2026-11-21)."""
     return ((app.cfg.get("approvals") or {}).get(tool.name) or tool.approval) != "always"
 
 
@@ -520,11 +530,11 @@ def make_client(server: str, conf: dict, secret=None):
             env[key] = value
     if conf.get("command"):
         return StdioMCPClient(server, conf["command"], conf.get("args") or [], env=env, cwd=conf.get("cwd"),
-                              timeout_s=conf.get("timeout_s", 60))
+                              timeout_s=conf.get("timeout_s", 0))
     token = os.environ.get(conf["bearer_env"]) if conf.get("bearer_env") else None
     if conf.get("bearer_secret") and secret:
         token = secret(conf["bearer_secret"]) or token
-    return MCPClient(server, conf.get("url") or "", token=token, timeout_s=conf.get("timeout_s", 30))
+    return MCPClient(server, conf.get("url") or "", token=token, timeout_s=conf.get("timeout_s", 0))
 
 
 def load(cfg: dict, reserved: set[str], log=print, clients: dict | None = None, opened: dict | None = None,
@@ -556,7 +566,9 @@ def load(cfg: dict, reserved: set[str], log=print, clients: dict | None = None, 
         if opened is not None:
             opened[server] = client
         normal_timeout = client.timeout_s
-        client.timeout_s = min(normal_timeout, float(conf.get("start_timeout_s", 5.0)))  # a hanging server must not hold up the start
+        # Listing the tools at start-up: a server that does not answer in time keeps its cached tools for now.
+        start = float(conf.get("start_timeout_s", 5.0))
+        client.timeout_s = start if normal_timeout is None else min(normal_timeout, start)
         try:
             specs = client.list_tools()
             if cache.get(server) != specs:

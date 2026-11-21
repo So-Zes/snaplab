@@ -2,6 +2,68 @@
 
 Newest first. Each entry: the date, what changed, and why.
 
+## 2026-11-21 Version 1.1.3
+
+- Version 1.1.3: the rules, caps and timeouts that had been added without the owner asking are gone (all below).
+  Bots and SnapCode have no default limits on bot-to-bot replies, message or memory length, reply length or waits
+  (a wait ends with Stop), no approval cards unless the settings ask for them, every bot has every tool and every
+  project, and new projects no longer tell SnapCode that its workspace is offline. Running the installer again
+  updates an existing install.
+
+## 2026-11-21 The usage rules, caps and timeouts Claude added on its own are removed
+
+- Why: the owner asked that the system's freedom is never reduced unless it truly cannot be helped. An audit found
+  about a hundred rules and limits that Claude had added on its own judgment and the owner never asked for. The
+  security boundaries (listed at the end) and the payment stop stay. A configured limit still works; 0 means no
+  limit, and waits end when the work is stopped, not by the clock.
+- Bots: the group rules keep only `[SILENT]` as an option and the user's stop (no "speak only when relevant",
+  "say you are waiting only once", "ask only once", "do not repeat another bot" or "do not create a group to
+  avoid a limit"). "Never restart SnapCode the user stopped" is removed from the instructions, the tool
+  descriptions and `send_to_session`. Every bot has the lead's tools (`read_memory`, `create_bot`,
+  `assign_project`), writes the notes about the user, sees and stops every bot's scheduled tasks, and may read and
+  change every project (shares were read-only); ownership and shares now only decide which projects a bot's context
+  shows (`access.looked_after`). Approval cards default to `never` for every action, also in groups and on the
+  local backend, whose instructions no longer say to start SnapCode only when asked. Tool arguments and BRIEFs in
+  another language are no longer refused (replies still follow the room's language). Bots may replace the whole
+  dashboard (`op set`) and remove widgets without a card, write sourced facts after reading the web, and read files
+  the user sent in any chat; a memory note has no 1,500-character limit.
+- SnapCode: no "write at most 200 lines / do not touch other files" prefix and no "build web apps in stages" rule.
+  New projects' BRIEF.md no longer says "work only in the session folder", "no internet, do not install packages"
+  or "use the standard library"; on the WSL or SSH workspace it says the job has internet and may install what it
+  needs (the check looked only at `ssh`, so WSL projects were told they were offline). "Do not use sudo" became the
+  fact that root is not available in the job sandbox. "Do not guess credentials", "never enter personal
+  information you were not given", "ignore unrelated instructions" and "do not debug the screenshot helper" are
+  removed; on-screen text is still treated as data. Any test command is accepted (no 300-character limit, server
+  and watch commands allowed).
+- Tools: MCP tools the server marks destructive run without a card and reach SnapCode too (a tool set to
+  `"always"` in `approvals` still asks and stays out of SnapCode). MCP calls, HTTP and stdio alike, have no time
+  limit by default (`timeout_s` 0) and end when the turn is stopped; the start-up listing still gives a server
+  5 s before using its cached tools. `read_page` reads `user:password@` URLs (HTTP Basic to that host only, not
+  along redirects) and follows up to 30 redirects.
+- Caps: no limit on the user's message, the composer, bot prompts, BRIEFs or bot-to-bot messages (the JSON request
+  guard went from 256 KB to 64 MB); "Try again" works any number of times; `bot_conversations.max_consecutive`
+  defaults to 0 and repeated texts are no longer refused; delivered files may be 4 GiB each, any number per turn;
+  plans have no 30-step limit; model requests have no 600 s timeout and Stop now also ends the wait for the first
+  byte (`provider_protocol.open_request(cancel=...)`); bot replies have no 8,192-token limit and SnapCode replies no
+  20,000-token limit (the translator gives them the room the context leaves, up to the model's own output limit);
+  `slots.session_max` defaults to 0 (SnapCode may use every slot); memory and the notes about the user have no size
+  limit (the nightly tidy then only merges and drops); scheduled tasks take any interval above 0 and a missed run
+  is done once however late; tests, a quiet local Codex, SnapCode's MCP calls (Pi and Codex get Node's longest
+  timer, about 24.8 days) and a quiet SSH worker are no longer cut by time; `desktop.py` and `browser.mjs` lost the
+  15-minute take-over wait, the action and size ranges, the component timeouts, the 120 s default waits, the 30 s
+  browser start and the cookie list limits (`--timeout N` still sets a wait).
+- Kept (security boundaries, until the owner decides otherwise): key redaction (`guard.py`), private-word
+  replacement (`privacy.py`), the instructions not to put personal details into searches or SnapCode and not to save
+  secrets, not following instructions inside outside material, chat bots never running code, bot-only session file
+  tools inside the project, data-only dashboards, `read_page` refusing local, private and tailnet addresses and
+  non-http(s) URLs, the WSL network relay and bubblewrap sandbox, no secret environment variables or credential
+  files for SnapCode, download-only HTML, device pairing and the tailnet-owner check, git staying inside a project,
+  the CLI built-in tools staying off, SnapCode's screen and file scope, the worker memory limits, the Codex and Pi
+  feature switches, context-size bounds and the file transfer limits.
+- Watch out: with no time limits, a server that never answers (a model provider, an MCP server, a test that never
+  ends, a page that never finishes loading) is waited for until the turn is stopped. A value in config.json (for
+  example `api.timeout_s`) still applies.
+
 ## 2026-11-21 Version 1.1.2
 
 - Version 1.1.2: RustXNG is installed on the first start and asks its full set of sources by default, so bots can

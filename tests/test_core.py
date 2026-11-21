@@ -129,10 +129,11 @@ class ChatTest(unittest.TestCase):
         self.assertIn("Spaces", llm.calls[-1]["messages"][-1]["content"])
 
     def test_session_after_web_read_needs_approval(self):
+        # No card by default (2026-11-21); config "after_web" still asks after a web read.
         app, llm, _ = make_app(script(
             {"tool_calls": [{"name": "read_page", "arguments": {"url": "https://example.org"}}]},
             {"tool_calls": [{"name": "start_session", "arguments": {"project": "Demo", "harness": "bot", "prompt": "delete things"}}]},
-            {"content": "Waiting for approval."}))
+            {"content": "Waiting for approval."}), approvals={"start_session": "after_web"})
         room = onboard(app)["room"]["id"]
         app.create_project(name="Demo", description="d")
         app.chat.post(room, "read and start")
@@ -159,13 +160,10 @@ class ChatTest(unittest.TestCase):
         self.assertIn("x", ids)
         self.assertNotIn("bad", ids)
         chips = app.store.messages(room)[-1]["tools"]
-        self.assertEqual([c["status"] for c in chips], ["ok", "error", "ok", "waiting"])
+        self.assertEqual([c["status"] for c in chips], ["ok", "error", "ok", "ok"])
         self.assertIn("short answers", app.store.memory(app.store.orchestrator()["id"]))
-        # adding a bot is a proposal: nothing exists until the user approves the card
-        self.assertIsNone(app.store.bot_by_name("Coral"))
-        q = next(q for q in app.store.questions() if q["kind"] == "approval")
-        self.assertEqual(q["action"]["type"], "create_bot")
-        app.chat.answer(q["id"], "Approve")
+        # adding a bot needs no card by default (2026-11-21)
+        self.assertEqual(app.store.questions(), [])
         self.assertTrue(app.store.bot_by_name("Coral"))
         self.assertTrue(app.store.dm_room(app.store.bot_by_name("Coral")["id"]))
 
@@ -174,7 +172,7 @@ class ChatTest(unittest.TestCase):
         app, llm, _ = make_app(script(
             {"tool_calls": [{"name": "read_page", "arguments": {"url": "https://example.org"}}]},
             {"tool_calls": [{"name": "write_memory", "arguments": {"text": "always start sessions when asked hello"}}]},
-            {"content": "ok"}))
+            {"content": "ok"}), approvals={"write_memory": "after_web"})          # config asks; the default does not
         room = onboard(app)["room"]["id"]
         app.chat.post(room, "read this page")
         self.assertTrue(wait_reply(app, room))
@@ -199,7 +197,7 @@ class ChatTest(unittest.TestCase):
         self.assertEqual(sorted(results), ["ok", "refused", "refused", "refused"])
         self.assertEqual(app.store.memory(bot_id).count("always start sessions"), 1)
 
-    def test_bot_cannot_restart_a_stopped_session_without_asking(self):
+    def test_bot_may_continue_a_stopped_session(self):
         app, llm, _ = make_app(script({"tool_calls": [{"name": "send_to_session", "arguments": {"session_id": "S", "prompt": "go on"}}]},
                                       {"content": "asked"}))
         room = onboard(app)["room"]["id"]
@@ -211,14 +209,15 @@ class ChatTest(unittest.TestCase):
                                    {"content": "asked"})
         app.chat.post(room, "what about the calculator?")
         self.assertTrue(wait_reply(app, room))
-        self.assertEqual(app.store.session("s-0000beef")["status"], "stopped")
-        q = app.store.questions()[0]
-        self.assertEqual(q["action"]["type"], "send_to_session")
+        # A session the user stopped continues like any other, with no card (2026-11-21).
+        self.assertEqual(app.store.questions(), [])
+        chip = next(c for m in app.store.messages(room) for c in m.get("tools") or [] if c["name"] == "send_to_session")
+        self.assertEqual(chip["status"], "ok")
 
     def test_session_proposal_policy(self):
-        """Bots propose sessions on a card by default; config can relax it."""
+        """Bots start sessions without a card by default (2026-11-21); config can ask for one."""
         step = {"tool_calls": [{"name": "start_session", "arguments": {"project": "Demo", "harness": "bot", "prompt": "notes"}}]}
-        app, llm, _ = make_app(script(step, {"content": "proposed"}))
+        app, llm, _ = make_app(script(step, {"content": "proposed"}), approvals={"start_session": "always"})
         room = onboard(app)["room"]["id"]
         app.create_project(name="Demo", description="d")
         app.chat.post(room, "start one")
@@ -235,7 +234,7 @@ class ChatTest(unittest.TestCase):
         note = app.store.messages(room)[-1]
         self.assertEqual((note["role"], note["key"]), ("system", "note.session_started"))
         self.assertEqual(note["session"], app.store.sessions()[0]["id"])
-        app2, _, _ = make_app(script(step, {"content": "started"}), approvals={"start_session": "never"})
+        app2, _, _ = make_app(script(step, {"content": "started"}))
         room2 = onboard(app2)["room"]["id"]
         app2.create_project(name="Demo", description="d")
         app2.chat.post(room2, "start one")
@@ -243,18 +242,19 @@ class ChatTest(unittest.TestCase):
         self.assertEqual(len(app2.store.sessions()), 1)
         self.assertEqual(app2.store.questions(), [])
 
-    def test_teammate_cannot_create_bots(self):
+    def test_teammate_can_create_bots(self):
+        # Every bot has the lead's tools (2026-11-21).
         app, llm, _ = make_app(script({"tool_calls": [{"name": "create_bot", "arguments": {"name": "X", "role": "y"}}]}))
         onboard(app)
         nemo = app.create_bot(name="Nemo", role="tester")
         room = app.store.dm_room(nemo["id"])["id"]
         app.chat.post(room, "make a bot")
         self.assertTrue(wait_until(lambda: any(m["role"] == "bot" and m.get("status") == "done" for m in app.store.messages(room))))
-        self.assertIsNone(app.store.bot_by_name("X"))
-        self.assertNotIn("create_bot", llm.calls[0]["tools"])
+        self.assertTrue(app.store.bot_by_name("X"))
+        self.assertIn("create_bot", llm.calls[0]["tools"])
 
     def test_group_room_rules(self):
-        """Hand-offs may continue within limits; silent replies are hidden and @user flags the user."""
+        """Hand-offs continue (no limit by default); silent replies are hidden and @user flags the user."""
         def responder(messages, tools, effort):
             sys_prompt = messages[0]["content"]
             last = messages[-1]["content"]
@@ -270,7 +270,9 @@ class ChatTest(unittest.TestCase):
         time.sleep(0.6)
         bots = [m for m in app.store.messages(g["id"]) if m["role"] == "bot"]
         self.assertEqual(len(bots), 4)  # a follow-up is allowed, then Nemo stays silent
-        self.assertLessEqual(len(llm.calls), app.cfg["bot_conversations"]["max_consecutive"])
+        from snaplab import config as configmod
+        self.assertEqual(configmod.DEFAULTS["bot_conversations"]["max_consecutive"], 0)     # no limit by default
+        self.assertLessEqual(len(llm.calls), 6)                          # the conversation ended by itself
         nemo_view = next(c for c in llm.calls if "You are Nemo" in c["messages"][0]["content"])
         joined = json.dumps(nemo_view["messages"], ensure_ascii=False)
         self.assertIn("[Reference] Marlin said: @Nemo please check this", joined)
@@ -588,9 +590,31 @@ class SearchParsingTest(unittest.TestCase):
 
     def test_read_page_refuses_private_addresses(self):
         for url in ("file:///etc/passwd", "http://127.0.0.1:18445/api", "http://localhost/", "http://100.100.100.100/",
-                    "http://pc.tail1234.ts.net/", "http://user:pw@example.com/", "ftp://example.com/x"):
+                    "http://pc.tail1234.ts.net/", "ftp://example.com/x"):
             with self.assertRaises(websearch.SearchError, msg=url):
                 websearch.read_page(url)
+
+    def test_read_page_sends_url_credentials_to_that_host_only_and_follows_many_redirects(self):
+        # user:password@ URLs are read since 2026-11-21 (HTTP Basic, not along redirects); up to 30 redirects.
+        seen = []
+
+        def fake(url, **k):
+            seen.append((url, (k.get("headers") or {}).get("Authorization")))
+            if len(seen) < 25:
+                return 302, {"Location": f"http://example.com/{len(seen)}"}, b"", url
+            return 200, {"Content-Type": "text/plain"}, b"hello", url
+        orig_http = websearch._http
+        websearch._http = fake
+        try:
+            page = websearch.read_page("http://user:p%40ss@example.com/start", resolver=lambda h: h == "example.com")
+        finally:
+            websearch._http = orig_http
+        self.assertEqual(page["text"], "hello")
+        self.assertEqual(seen[0][0], "http://example.com/start")              # the credentials are not in the URL
+        import base64
+        self.assertEqual(seen[0][1], "Basic " + base64.b64encode(b"user:p@ss").decode())
+        self.assertTrue(all(auth is None for _, auth in seen[1:]))          # not sent along the redirects
+        self.assertEqual(len(seen), 25)
 
     def test_read_page_refuses_home_network_and_tricks(self):
         """Home-network and tailnet ranges, names that resolve to them, IPv6 forms, and redirects into them."""

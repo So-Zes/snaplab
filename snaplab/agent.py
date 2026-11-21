@@ -117,8 +117,9 @@ def fit_tool_result(res: "ToolResult", messages: list[dict], tools, llm, max_tok
     if not isinstance(window, int) or window <= 0:
         return clip(content, TOOL_RESULT_CHARS)
     from .context import estimate_tokens
-    from .provider_protocol import estimate_input
-    reply = max(1, min(int(max_tokens or 4096), 32768, window // 4))
+    from .provider_protocol import capabilities, estimate_input
+    most = int(capabilities(cfg)["max_output_tokens"])         # the same reserve as provider_protocol.prepare
+    reply = max(1, min(int(max_tokens or most), most, window // 4))
     room = window - estimate_input({"messages": messages, "tools": tools}) - reply - min(1024, window // 10) - 512
     need = estimate_tokens(content)
     if need <= room:
@@ -137,6 +138,14 @@ def _trim_reasoning(messages: list[dict]) -> None:
     idx = [i for i, m in enumerate(messages) if m.get("role") == "assistant" and m.get("reasoning_content")]
     for i in idx[:-KEEP_REASONING_STEPS]:
         messages[i].pop("reasoning_content", None)
+
+
+def reply_tokens(cfg: dict) -> int | None:
+    """The most tokens of a bot's reply from config chat.max_tokens, or None (the default 0): the provider decides,
+    within the model's own output limit (provider_protocol.prepare). Until 2026-11-21 it was 8,192."""
+    from .config import limit
+    cap = limit((cfg.get("chat") or {}).get("max_tokens"))
+    return None if cap == float("inf") else int(cap)
 
 
 def step_cap(value) -> int:

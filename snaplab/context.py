@@ -195,8 +195,8 @@ class ContextBuilder:
         if budget <= 0:
             return ""
         st, parts = self.app.store, []
-        from .access import project_ids
-        pids = project_ids(self.app, bot)
+        from .access import looked_after
+        pids = looked_after(self.app, bot)
         if not pids:
             return ""
         each = max(200, budget // max(1, len(pids)))
@@ -223,11 +223,15 @@ class ContextBuilder:
         st = self.app.store
         model = self.app.models.spec(bot.get("model"), "chat")
         limit = model["context_limit"]
-        mem_limit = int(self.app.cfg.get("memory_chars", 4000))
+        from .config import limit as cap
         from .tools import schema_tokens
-        cfg = budgets(self.cfg, limit, memory_chars=mem_limit, user_chars=int(self.app.cfg.get("user_note_chars", 1400)),
+        # The notes have no size limit by default; the budget then follows their real length.
+        mem_cap, user_cap = cap(self.app.cfg.get("memory_chars")), cap(self.app.cfg.get("user_note_chars"))
+        mem_limit = int(mem_cap) if mem_cap != float("inf") else len(st.memory(bot["id"]))
+        user_limit = int(user_cap) if user_cap != float("inf") else len(st.user_note())
+        cfg = budgets(self.cfg, limit, memory_chars=mem_limit, user_chars=user_limit,
                       tool_tokens=schema_tokens(self.app, bot, limit),
-                      output_tokens=int((self.app.cfg.get("chat") or {}).get("max_tokens") or 8192))
+                      output_tokens=int((self.app.cfg.get("chat") or {}).get("max_tokens") or 32768))
         settings = st.settings()
         members = [b for b in (st.bot(i) for i in room.get("bots", [])) if b]
         memory = st.memory(bot["id"])
@@ -322,9 +326,9 @@ class ContextBuilder:
         if since:                                # finished work from before the bot's fresh start is left out
             sessions = [s for s in sessions if s.get("status") in ("running", "queued", "waiting")
                         or later_than(s.get("updated"), since)]
-        if not bot.get("orchestrator"):          # a teammate sees the project it looks after (round 6)
-            from .access import project_ids
-            mine = set(project_ids(self.app, bot))
+        if not bot.get("orchestrator"):          # a teammate's context shows the projects it looks after (round 6)
+            from .access import looked_after
+            mine = set(looked_after(self.app, bot))
             projects = [p for p in projects if p["id"] in mine]
             sessions = [s for s in sessions if s.get("project") in mine]
         state = prompts.state_block(bot=bot, projects=projects, sessions=sessions, names=names,

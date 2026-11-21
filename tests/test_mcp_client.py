@@ -93,8 +93,8 @@ class MCPClientTest(unittest.TestCase):
         found = mcp_client.load(self.cfg(approvals={"get_latest_posts": "always"}, exclude=["broken"]), builtin_tool_names())
         self.assertEqual(set(found), {"xw_get_latest_posts", "xw_remove_account", "xw_mark_read"})
         self.assertEqual(found["xw_get_latest_posts"].approval, "always")     # explicit override
-        self.assertEqual(found["xw_remove_account"].approval, "always")       # destructive tools ask first
-        self.assertEqual(found["xw_mark_read"].approval, "never")             # everything else runs directly
+        self.assertEqual(found["xw_remove_account"].approval, "never")        # destructive tools run directly too
+        self.assertEqual(found["xw_mark_read"].approval, "never")             # everything runs directly by default
         self.assertTrue(found["xw_get_latest_posts"].untrusted)
         self.assertNotIn("$schema", found["xw_get_latest_posts"].parameters)
         found = mcp_client.load(self.cfg(), builtin_tool_names())
@@ -129,13 +129,14 @@ class MCPClientTest(unittest.TestCase):
         found = mcp_client.load(self.cfg(), builtin_tool_names() | {"xw_mark_read"}, log=logs.append)
         self.assertNotIn("xw_mark_read", found)
 
-    def test_bot_turn_uses_read_tools_and_asks_before_changes(self):
+    def test_bot_turn_uses_read_tools_and_asks_before_changes_when_config_says_so(self):
+        # A destructive tool runs directly by default (2026-11-21); a per-tool "always" still asks on a card.
         from test_core import script, wait_reply
         app, llm, _ = make_app(script({"tool_calls": [{"name": "xw_get_latest_posts", "arguments": {"limit": 1}}]},
                                       {"content": "One post."},
                                       {"tool_calls": [{"name": "xw_remove_account", "arguments": {"handle": "a"}}]},
                                       {"content": "Waiting."}),
-                               mcp_servers={"xw": {"url": self.mcp.url}})
+                               mcp_servers={"xw": {"url": self.mcp.url, "approvals": {"remove_account": "always"}}})
         room = onboard(app)["room"]["id"]
         app.chat.post(room, "news?")
         self.assertTrue(wait_reply(app, room))
@@ -149,6 +150,24 @@ class MCPClientTest(unittest.TestCase):
         self.assertEqual((q["kind"], q["action"]["tool"]), ("approval", "xw_remove_account"))
         app.chat.answer(q["id"], "Approve")
         self.assertTrue(wait_until(lambda: ("remove_account", {"handle": "a"}) in self.mcp.calls))
+
+    def test_destructive_tools_run_directly_by_default(self):
+        from test_core import script, wait_reply
+        app, llm, _ = make_app(script({"tool_calls": [{"name": "xw_remove_account", "arguments": {"handle": "b"}}]},
+                                      {"content": "Removed."}),
+                               mcp_servers={"xw": {"url": self.mcp.url}})
+        room = onboard(app)["room"]["id"]
+        app.chat.post(room, "stop tracking b")
+        self.assertTrue(wait_reply(app, room))
+        self.assertIn(("remove_account", {"handle": "b"}), self.mcp.calls)
+        self.assertEqual(app.store.questions(), [])
+
+    def test_a_call_waits_without_a_time_limit_and_stops_with_the_turn(self):
+        client = mcp_client.MCPClient("xw", self.mcp.url)
+        self.assertIsNone(client.timeout_s)                       # 0 (the default) = no time limit
+        stopped = [True]
+        with self.assertRaisesRegex(mcp_client.MCPError, "stopped"):
+            client.call_tool("get_latest_posts", {}, cancel=lambda: stopped[0])
 
     def test_bots_are_told_about_connections(self):
         app, llm, _ = make_app(None, mcp_servers={"xw": {"url": self.mcp.url, "label": "notes"}})
@@ -212,12 +231,16 @@ class MCPClientTest(unittest.TestCase):
         self.assertNotIn("xw_get_latest_posts", system)
         self.assertIn("start_session", llm.calls[1]["messages"][-1]["content"])      # denial is sent back
 
-        # Sessions (bot harness, Codex and Pi through the SnapLab MCP) get the tools, except card-only ones.
+        # Sessions (bot harness, Codex and Pi through the SnapLab MCP) get the tools, destructive ones too
+        # (2026-11-21); only a tool that config sets to "always" (a card) stays out.
         session = {"id": "s-0000000a", "bot": bot["bot"]["id"], "project": "p-0000000a", "harness": "codex",
                    "status": "running"}
         app.store.save_session(session)
         names = {t["function"]["name"] for t in Toolbox(app, bot["bot"], session=session).schemas()}
         self.assertIn("xw_get_latest_posts", names)
+        self.assertIn("xw_remove_account", names)
+        app.cfg["approvals"] = {"xw_remove_account": "always"}
+        names = {t["function"]["name"] for t in Toolbox(app, bot["bot"], session=session).schemas()}
         self.assertNotIn("xw_remove_account", names)
         events = []
         token = app.web_mcp.activate(session, SimpleNamespace(cancelled=lambda: False, emit=events.append))

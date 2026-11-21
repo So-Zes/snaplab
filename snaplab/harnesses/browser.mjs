@@ -27,7 +27,7 @@
 //   type:#name=hello         click the element, then type the text as key presses      type:=hello  focused element
 //   press:Enter | press:ArrowLeft | press:Space | press:a | press:Control+s | press:F5
 //   keydown:Shift | keyup:Shift   hold:ArrowRight=1.5   (hold a key for seconds, for games)
-//   wait:2 | wait:#selector | wait:text=Game over       seconds, or until it appears (up to --timeout)
+//   wait:2 | wait:#selector | wait:text=Game over       seconds, or until it appears (no time limit unless --timeout N)
 //   scroll:down | scroll:up | scroll:#selector
 //   eval:JS                  result printed (e.g. eval:window.game.score)
 //   console[:N]              the page's console messages (all levels) and errors since it loaded, last N (50)
@@ -108,12 +108,13 @@ function serve(root) {
 }
 
 function screenSize() {
-  const m = /^(\d{3,4})x(\d{3,4})$/.exec(process.env.SNAPLAB_SCREEN || "");
+  const m = /^([1-9]\d*)x([1-9]\d*)$/.exec(process.env.SNAPLAB_SCREEN || "");
   return m ? { width: Number(m[1]), height: Number(m[2]) } : { width: 1024, height: 768 };
 }
 
 function parseArgs(argv) {
-  const opts = { width: 1280, height: 800, timeout: 120, mobile: false, fresh: false, shot: true, headful: false,
+  // timeout 0 (the default) = no time limit for commands, page loads and waits; --timeout N sets one.
+  const opts = { width: 1280, height: 800, timeout: 0, mobile: false, fresh: false, shot: true, headful: false,
     devtools: false, sized: false, kind: false };
   const steps = [];
   let target = null, command = "open";
@@ -137,8 +138,8 @@ function parseArgs(argv) {
   // because the default was a browser without a window). --mobile or a size still means page emulation, headless.
   if (!opts.headful && !opts.headless && process.env.DISPLAY && !opts.mobile && !opts.sized) opts.headful = true;
   if (opts.headful && !opts.sized) Object.assign(opts, screenSize());
-  if (!(opts.width >= 200 && opts.width <= 3840 && opts.height >= 200 && opts.height <= 3000)) throw new Error("--width/--height out of range");
-  if (!(opts.timeout >= 5 && opts.timeout <= 1800)) throw new Error("--timeout must be 5-1800 seconds");
+  if (!(opts.width > 0 && opts.height > 0)) throw new Error("--width and --height must be numbers above 0");
+  if (!(opts.timeout >= 0)) throw new Error("--timeout must be a number of seconds (0 = no limit)");
   return { command, target, steps, opts };
 }
 
@@ -158,7 +159,7 @@ async function socketPipe(url, commandMs) {
   ws.onclose = () => { for (const p of pending.values()) { clearTimeout(p.timer); p.reject(new Error("the live browser closed")); } pending.clear(); };
   const send = (method, params = {}, sessionId, ms = commandMs) => new Promise((resolve, reject) => {
     const id = ++next;
-    const timer = setTimeout(() => { pending.delete(id); reject(new Error("browser command " + method + " took longer than " + Math.round(ms / 1000) + " s")); }, ms);
+    const timer = ms ? setTimeout(() => { pending.delete(id); reject(new Error("browser command " + method + " took longer than " + Math.round(ms / 1000) + " s")); }, ms) : null;
     pending.set(id, { resolve, reject, timer, method });
     ws.send(JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) }));
   });
@@ -175,14 +176,11 @@ function controlHolder(root) {
   try { return JSON.parse(fs.readFileSync(CONTROL(root), "utf-8")).holder === "user" ? "user" : "agent"; } catch { return "agent"; }
 }
 
-// Actions wait while the user has the browser (up to 15 minutes), then say so.
+// Actions wait while the user has the browser, until they hand it back (no time limit), then say so.
 async function waitForUser(root) {
   if (controlHolder(root) !== "user") return null;
   const t0 = Date.now();
-  while (controlHolder(root) === "user") {
-    if (Date.now() - t0 > 15 * 60000) throw new Error("the user still has control of the browser after 15 minutes; do other work or ask them");
-    await sleep(1000);
-  }
+  while (controlHolder(root) === "user") await sleep(1000);
   return "the user used the browser for " + Math.round((Date.now() - t0) / 1000) + " s while you waited; look at the page again before acting";
 }
 
@@ -330,9 +328,15 @@ async function startLive(root, opts) {
   if (started.status !== 0) throw new Error("could not start the browser: " + (started.stdout || started.stderr).trim());
   fs.writeFileSync(LIVE(root), JSON.stringify({ base: "http://127.0.0.1:" + filesPort + "/", width: opts.width, height: opts.height,
     mobile: opts.mobile && !opts.headful, headful: opts.headful }));
-  const t0 = Date.now();
+  // Wait until the browser is up, without a time limit; it ends early only if the browser process has exited.
+  let checked = Date.now();
   while (!liveState(root)) {
-    if (Date.now() - t0 > 30000) throw new Error("the browser did not open within 30 s; see: python3 .snaplab/keep.py log browser");
+    if (Date.now() - checked > 2000) {
+      checked = Date.now();
+      let running = true;
+      try { running = JSON.parse(KEEP(root, ["list"]).stdout || "[]").some((r) => r.name === "browser" && r.running); } catch {}
+      if (!running && !liveState(root)) throw new Error("the browser exited before it opened; see: python3 .snaplab/keep.py log browser");
+    }
     await new Promise((r) => setTimeout(r, 200));
   }
   ensureRelay(root);
@@ -450,7 +454,7 @@ async function main() {
     };
     const navigate = async (to) => {
       const loaded = new Promise((ok) => {
-        const timer = setTimeout(() => { pipe.listeners.delete(l); ok(false); }, ms);
+        const timer = ms ? setTimeout(() => { pipe.listeners.delete(l); ok(false); }, ms) : null;
         const l = (m) => { if (m.sessionId === sessionId && m.method === "Page.loadEventFired") { clearTimeout(timer); pipe.listeners.delete(l); ok(true); } };
         pipe.listeners.add(l);
       });
@@ -516,7 +520,7 @@ async function main() {
       const test = spec.startsWith("text=") ? `document.body && document.body.innerText.includes(${JSON.stringify(spec.slice(5))})`
         : `!!document.querySelector(${JSON.stringify(spec)})`;
       const ok = await evaluate(`new Promise((done) => { const t0 = Date.now(); const tick = () => { let v = false; try { v = ${test}; } catch {}
-        if (v || Date.now() - t0 > ${ms}) done(v); else setTimeout(tick, 200); }; tick(); })`);
+        if (v || (${ms} && Date.now() - t0 > ${ms})) done(v); else setTimeout(tick, 200); }; tick(); })`);
       if (!ok) throw new Error("waited " + opts.timeout + " s but " + spec + " did not appear");
     };
     // Page pixels -> screen pixels (headful only): a mouse event reports both its page and its screen position.
@@ -629,7 +633,7 @@ async function main() {
           rec.value = await evaluate(`(() => { const dump = (s) => { const o = {}; try { for (let i = 0; i < s.length; i++) { const k = s.key(i); o[k] = String(s.getItem(k)).slice(0, 1000); } } catch (e) { return String(e); } return o; };
             return { origin: location.origin, localStorage: dump(localStorage), sessionStorage: dump(sessionStorage) }; })()`);
           const { cookies } = await send("Network.getCookies");
-          rec.value.cookies = cookies.slice(0, 50).map((c) => ({ name: c.name, value: String(c.value).slice(0, 200), domain: c.domain, httpOnly: c.httpOnly }));
+          rec.value.cookies = cookies.map((c) => ({ name: c.name, value: String(c.value), domain: c.domain, httpOnly: c.httpOnly }));
         } else if (name === "tabs") {
           const { targetInfos } = await pipe.send("Target.getTargets");
           rec.value = targetInfos.filter(isPage).map((t, n) => ({ tab: n, title: t.title, url: t.url.split(base || "\0").join(""), current: t.targetId === targetId }));
@@ -654,7 +658,7 @@ async function main() {
         } else if (name === "text") rec.value = String(await evaluate("document.body ? document.body.innerText : ''")).slice(0, 4000);
         else if (name === "url") await navigate(/^(https?|file|data|about):/i.test(arg) || !base ? arg : base + arg.replace(/^\.?\/+/, ""));
         else if (name === "reload") {
-          const loaded = new Promise((ok) => { const t = setTimeout(() => ok(), ms);
+          const loaded = new Promise((ok) => { const t = ms ? setTimeout(() => ok(), ms) : null;
             const l = (m) => { if (m.sessionId === sessionId && m.method === "Page.loadEventFired") { clearTimeout(t); pipe.listeners.delete(l); ok(); } };
             pipe.listeners.add(l); });
           await send("Page.reload", { ignoreCache: true }); await loaded;

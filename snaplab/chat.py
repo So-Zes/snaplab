@@ -20,7 +20,7 @@ import unicodedata
 from . import context as context_mod
 from . import prompts
 from . import mcp_client
-from .agent import run_loop, step_cap
+from .agent import reply_tokens, run_loop, step_cap
 from .llm import ApiError, Cancelled, error_code
 from .store import new_id, now_iso
 from . import tools as tools_mod
@@ -151,8 +151,6 @@ class ChatManager:
         attached = uploads.claim(self.app, room_id, files) if files else []      # photos and files the user sent
         if not text and not attached:
             raise ValueError("empty message")
-        if len(text) > 8000:
-            raise ValueError("the message is too long (8000 characters at most)")
         if attached:
             extra = {**(extra or {}), "attachments": attached}
             if not text:
@@ -202,8 +200,8 @@ class ChatManager:
             raise ValueError("no such sender")
         if not recipients or any(not self.store.bot(b) or b == sender["id"] for b in recipients):
             raise ValueError("choose other existing bots")
-        if not isinstance(text, str) or not text.strip() or len(text) > 8000:
-            raise ValueError("a message needs 1 to 8000 characters")
+        if not isinstance(text, str) or not text.strip():
+            raise ValueError("a message needs some text")
         if room_id:
             room = self.store.room(room_id)
             if (not room or room.get("kind") != "group"
@@ -227,8 +225,8 @@ class ChatManager:
                 raise ValueError(self.app.t("dialogue." + reason))
             text = self.app.guard.clean(text.strip())
             if not self.dialogue.accept_text(origin, text):
-                self._dialogue_note(source["id"], "repeat")
-                raise ValueError(self.app.t("dialogue.repeat"))
+                self._dialogue_note(source["id"], "stopped")
+                raise ValueError(self.app.t("dialogue.stopped"))
             members = list(dict.fromkeys([sender["id"], *recipients]))
             room = self.store.room(room_id) if room_id else None
             if not room and not new_group:
@@ -379,8 +377,6 @@ class ChatManager:
             raise LookupError("no such reply")
         if m.get("status") not in ("error", "stopped"):
             raise ValueError("only a failed or stopped reply can be tried again")
-        if m.get("retried"):
-            raise ValueError("this reply was already tried again")
         if m.get("bot") not in room.get("bots", []):
             raise ValueError("this bot is no longer in the room")
         if self.busy(room_id):
@@ -587,7 +583,7 @@ class ChatManager:
             if limit <= tools_mod.SMALL_WINDOW:
                 schemas = tools_mod.compact_schemas(schemas)
             res = run_loop(app.models.get(bot.get("model"), "chat"), messages, schemas, box, effort=bot.get("first_effort", cfg["api"]["chat_effort"]),
-                           max_steps=step_cap(cfg["chat"].get("max_steps")), max_tokens=int(cfg["chat"]["max_tokens"]),
+                           max_steps=step_cap(cfg["chat"].get("max_steps")), max_tokens=reply_tokens(cfg),
                            source="chat", caller_id=room_id, cancel=cancel.is_set, on_reasoning=on_reasoning, on_content=on_content,
                            on_step=on_step, kind="session" if scheduled else
                            ("followup" if msg["bot_conversation"] else "chat"),
@@ -639,10 +635,6 @@ class ChatManager:
             text = final.get("text") or ""
             if text.strip() == SILENT or (text.strip().startswith(SILENT) and len(text.strip()) < len(SILENT) + 3):
                 final["status"] = "silent"          # the bot chose to stay quiet; the phone hides it
-            elif not box.asked and text.strip() and not self.dialogue.accept_text(origin, text):
-                final["status"] = "silent"
-                final["suppressed"] = "repeat"
-                self._dialogue_note(room_id, "repeat")
             elif re.search(r"@(user|you)(?![\w])", text, re.I) or (bot.get("call_user") and re.search(
                     r"@" + re.escape(bot["call_user"]) + r"(?![\w])", text, re.I)):
                 final["needs_you"] = True

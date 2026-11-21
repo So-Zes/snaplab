@@ -39,32 +39,34 @@ class Round10Test(unittest.TestCase):
         app.set_owner(ps[0]["id"], lead["id"])
         self.assertEqual(app.store.bot(peer["id"])["projects"], [ps[1]["id"]])
 
-    def test_shared_access_is_read_only_and_revocable_everywhere(self):
+    def test_every_bot_reads_and_changes_every_project_and_shares_set_the_focus(self):
+        # Since 2026-11-21 every bot may read and manage every project; a share only adds it to the bot's context.
         app, _, lead, owner = self.make()
         reader = app.create_bot(name="Reader")
         p = app.create_project(name="PrivateRoadmap", bot=owner["id"])
         box = self.box(app, reader)
-        self.assertNotIn(p["name"], box.t_list_projects().content)
-        self.assertNotIn(p["id"], box.t_list_bots().content)
+        self.assertIn(p["name"], box.t_list_projects().content)
+        self.assertIn(p["id"], box.t_list_bots().content)
         rec = app.archive.add("doc", "private roadmap detail", project=p["id"], bot=reader["id"],
                               room=app.store.dm_room(reader["id"])["id"])
-        self.assertIsNone(app.archive.get(rec["id"], Scope.for_bot(app, reader)))
-        self.assertFalse(app.archive.search("roadmap detail", Scope.for_bot(app, reader)))
-        self.assertIn("Error", box("share_project", {"project": p["id"], "bot": lead["id"]}, "bad").content)
+        self.assertIsNotNone(app.archive.get(rec["id"], Scope.for_bot(app, reader)))
+        self.assertNotIn("Error", box("write_brief", {"project": p["id"], "text": "Reader's notes."}, "brief").content)
+        self.assertNotIn("Error", box("share_project", {"project": p["id"], "bot": lead["id"]}, "share").content)
+        self.assertEqual(app.inside_view(reader["id"])["projects"], [])
         self.box(app, owner).t_share_project(p["id"], reader["id"])
         self.assertIn(p["name"], box.t_list_projects().content)
-        self.assertIn(p["name"], box.t_read_brief(p["id"]).content)
-        self.assertIsNotNone(app.archive.get(rec["id"], Scope.for_bot(app, reader)))
+        self.assertIn("Reader's notes", box.t_read_brief(p["id"]).content)
         self.assertTrue(app.archive.search("roadmap detail", Scope.for_bot(app, reader)))
         self.assertEqual([x["id"] for x in app.inside_view(reader["id"])["projects"]], [p["id"]])
         self.assertIn(p["name"], json.dumps(app.chat.build_messages(app.store.dm_room(reader["id"]), reader, "en")))
-        for name, args in (("write_brief", {"project": p["id"], "text": "Overwrite"}),
-                           ("start_session", {"project": p["id"], "harness": "bot", "prompt": "work"})):
-            self.assertIn("Error", box(name, args, name).content)
+        with patch.object(app.sessions, "_start"):
+            for name, args in (("write_brief", {"project": p["id"], "text": "Overwrite"}),
+                               ("start_session", {"project": p["id"], "harness": "bot", "prompt": "work"})):
+                self.assertNotIn("Error", box(name, args, name).content)
         self.box(app, lead).t_share_project(p["id"], reader["id"], False)
-        self.assertNotIn(p["name"], box.t_list_projects().content)
-        self.assertIsNone(app.archive.get(rec["id"], Scope.for_bot(app, reader)))
-        self.assertEqual(app.inside_view(reader["id"])["projects"], [])
+        self.assertIn(p["name"], box.t_list_projects().content)              # still there without a share
+        self.assertIsNotNone(app.archive.get(rec["id"], Scope.for_bot(app, reader)))
+        self.assertEqual(app.inside_view(reader["id"])["projects"], [])     # but no longer in the reader's focus
 
     def test_second_project_approval_survives_but_transfer_invalidates_it(self):
         app, _, lead, peer = self.make(approvals={"write_brief": "always"})
@@ -121,7 +123,7 @@ class Round10Test(unittest.TestCase):
             {"tool_calls": [{"name": "read_page", "arguments": {"url": "https://example.org/a"}}]},
             {"tool_calls": [{"name": "create_project", "arguments": {"name": "Approved app", "description": "App"}}]},
         ])
-        app, _, lead, _ = self.make(lambda *args: next(steps))
+        app, _, lead, _ = self.make(lambda *args: next(steps), approvals={"create_project": "after_web"})
         room = app.store.dm_room(lead["id"])
         with patch.object(app.push, "notify") as notify:
             result = app.chat.run_turn(room["id"], lead["id"])
@@ -154,7 +156,7 @@ class Round10Test(unittest.TestCase):
         self.assertIsNone(box.asked)
 
     def test_explicit_recall_of_web_is_a_current_read(self):
-        app, _, lead, _ = self.make()
+        app, _, lead, _ = self.make(approvals={"create_project": "after_web"})     # config asks; the default does not
         rec = app.archive.add("page", "Web instructions", bot=lead["id"])
         box = self.box(app, lead)
         box.t_recall(record=rec["id"])
@@ -163,7 +165,9 @@ class Round10Test(unittest.TestCase):
         self.assertEqual(box.asked["prop"]["web_reads"], [{"tool": "recall", "source": rec["id"]}])
 
     def test_message_bot_delivers_reply_in_visible_group_with_lower_priority(self):
-        app, llm, lead, peer = self.make(lambda *args: {"content": "I can handle the schedule layout."})
+        # The scripted bots always answer and repeats are not refused any more, so a budget ends their talk.
+        app, llm, lead, peer = self.make(lambda *args: {"content": "I can handle the schedule layout."},
+                                         bot_conversations={"max_consecutive": 2})
         out = json.loads(self.box(app, lead).t_message_bot(peer["id"], "Please consider the schedule layout.").content)
         self.drain(app)
         room = app.store.room(out["room"])
@@ -203,7 +207,7 @@ class Round10Test(unittest.TestCase):
         self.drain(app)
         self.assertTrue(any(m.get("bot") == peer["id"] and m.get("status") == "done" for m in app.store.messages(group["id"])))
         self.assertTrue(any(m.get("status") == "silent" for m in app.store.messages(group["id"])))
-        self.assertIn("Even without @YourName", llm.calls[0]["messages"][0]["content"])
+        self.assertIn("with or without @YourName", llm.calls[0]["messages"][0]["content"])
 
     def test_consecutive_limit_caps_autonomous_calls(self):
         counter = iter(range(100))
@@ -218,7 +222,7 @@ class Round10Test(unittest.TestCase):
         self.drain(app)
         self.assertEqual(len(llm.calls), 8)
 
-    def test_cross_room_hops_cannot_reset_budget_or_duplicate_text(self):
+    def test_cross_room_hops_cannot_reset_a_configured_budget_and_repeats_are_accepted(self):
         app, _, lead, peer = self.make(bot_conversations={"max_consecutive": 3})
         room = app.store.dm_room(lead["id"])
         origin = "human-origin"
@@ -226,13 +230,13 @@ class Round10Test(unittest.TestCase):
             one = app.chat.message_bot(lead, [peer["id"]], "First task", origin=origin, source_room=room["id"])
             two = app.chat.message_bot(peer, [lead["id"]], "Second task", origin=origin,
                                        source_room=one["room"], new_group=True)
-            with self.assertRaisesRegex(ValueError, "repeated"):
-                app.chat.message_bot(lead, [peer["id"]], "First task!", origin=origin,
-                                     source_room=two["room"], new_group=True)
+            # the same text again is accepted (until 2026-11-21 a repeat of the last 20 was refused)
+            three = app.chat.message_bot(lead, [peer["id"]], "First task!", origin=origin,
+                                         source_room=two["room"], new_group=True)
             with self.assertRaisesRegex(ValueError, "limit"):
                 app.chat.message_bot(lead, [peer["id"]], "Fourth task", origin=origin,
-                                     source_room=two["room"], new_group=True)
-        self.assertEqual(len([r for r in app.store.rooms() if r["kind"] == "group"]), 2)
+                                     source_room=three["room"], new_group=True)
+        self.assertEqual(len([r for r in app.store.rooms() if r["kind"] == "group"]), 3)
 
     def test_hourly_limit_persists_and_expires_across_rooms(self):
         app, _, lead, peer = self.make(bot_conversations={"max_hourly": 2})
@@ -246,15 +250,17 @@ class Round10Test(unittest.TestCase):
         with patch("snaplab.dialogue.time.time", return_value=13601):
             self.assertIsNone(DialogueLimits(app).reserve("c", room, lead["id"]))
 
-    def test_repeats_are_hidden_and_do_not_continue(self):
-        app, llm, lead, peer = self.make(lambda *args: {"content": "The same repeated idea."})
+    def test_repeats_are_shown_and_only_a_configured_limit_ends_them(self):
+        # Repeated text is no longer hidden (2026-11-21); a configured max_consecutive still ends the chain.
+        app, llm, lead, peer = self.make(lambda *args: {"content": "The same repeated idea."},
+                                         bot_conversations={"max_consecutive": 3})
         group = app.create_group("Team", [lead["id"], peer["id"]])
         app.chat.post(group["id"], "Discuss")
         self.drain(app)
         rows = [m for m in app.store.messages(group["id"]) if m["role"] == "bot"]
-        self.assertEqual([m["status"] for m in rows], ["done", "silent"])
-        self.assertEqual(rows[-1]["suppressed"], "repeat")
-        self.assertEqual(len(llm.calls), 2)
+        self.assertEqual([m["status"] for m in rows], ["done", "done", "done"])
+        self.assertFalse(any(m.get("suppressed") for m in rows))
+        self.assertEqual(len(llm.calls), 3)
 
     def test_stop_cancels_connected_rooms_and_blocks_new_group_hops(self):
         app, _, lead, peer = self.make()
@@ -287,7 +293,7 @@ class Round10Test(unittest.TestCase):
         self.assertEqual(len([m for m in app.store.messages(group["id"]) if m["role"] == "bot"]), 1)
 
     def test_web_contact_requires_card_and_does_not_dispatch_other_calls(self):
-        app, _, lead, peer = self.make()
+        app, _, lead, peer = self.make(approvals={"message_bot": "after_web"})      # config asks; the default does not
         box = self.box(app, lead)
         box.t_read_page("https://example.org/a")
         with patch.object(app.chat, "_enqueue"):
@@ -341,26 +347,28 @@ class Round10Test(unittest.TestCase):
         self.assertIsNone(app.store.project("Should wait"))
         self.assertEqual([t["name"] for t in result["tools"]], ["ask_user"])
 
-    def test_shared_sessions_allow_status_but_never_send_stop_or_start(self):
+    def test_any_bot_may_follow_send_to_and_stop_any_session(self):
+        # Since 2026-11-21 a bot that does not own the project may also instruct and stop its sessions.
         app, _, lead, owner = self.make()
         reader = app.create_bot(name="Reader")
         p = app.create_project(name="Work", bot=owner["id"])
         app.store.save_session({"id": "s-0000abcd", "project": p["id"], "status": "review", "harness": "bot", "title": "Work"})
-        self.box(app, owner).t_share_project(p["id"], reader["id"])
         box = self.box(app, reader)
         self.assertIn("s-0000abcd", box.t_list_sessions(p["id"]).content)
         self.assertIn("review", box.t_get_session("s-0000abcd").content)
-        with patch.object(app.sessions, "send") as send, patch.object(app.sessions, "stop") as stop:
-            self.assertIn("Error", box("send_to_session", {"session_id": "s-0000abcd", "prompt": "More"}, "send").content)
-            self.assertIn("Error", box("stop_session", {"session_id": "s-0000abcd"}, "stop").content)
-            send.assert_not_called()
-            stop.assert_not_called()
+        with patch.object(app.sessions, "send") as send, patch.object(app.sessions, "stop", return_value=True) as stop:
+            self.assertNotIn("Error", box("send_to_session", {"session_id": "s-0000abcd", "prompt": "More"}, "send").content)
+            self.assertNotIn("Error", box("stop_session", {"session_id": "s-0000abcd"}, "stop").content)
+            send.assert_called_once()
+            stop.assert_called_once()
 
     def test_demo_commands_for_round10_work_in_both_languages(self):
         from tools.demo_server import DemoLLM, app_ref
         for lang in ("en", "ja"):
             with self.subTest(lang=lang):
-                app, _, lead, peer = self.make()
+                # config asks for a card after a web read; the demo bots always answer, so a budget ends their talk
+                app, _, lead, peer = self.make(approvals={"create_project": "after_web"},
+                                               bot_conversations={"max_consecutive": 6})
                 app.store.update_settings(lang=lang)
                 demo = DemoLLM(delay=0)
                 app.models.override = demo

@@ -56,7 +56,7 @@ def derive(cfg: dict) -> None:
         return
     providers.setdefault(provider_name, {
         "base_url": api.get("base_url"), "api_key_env": api.get("api_key_env") or "SNAPSCRIBE_API_KEY",
-        "user_agent": api.get("user_agent") or "snaplab/0.1", "timeout_s": api.get("timeout_s", 600),
+        "user_agent": api.get("user_agent") or "snaplab/0.1", "timeout_s": api.get("timeout_s", 0),
         "key_expires": api.get("key_expires"), "slots": "shared", "label": "Snapscribe" if qwen else "Default",
         **({"kind": "snapscribe"} if qwen else {})})
     models.setdefault(model_name, {
@@ -137,7 +137,7 @@ class ModelRegistry:
         return {"name": name, "provider": m["provider"], "model": m["model"],
                 "base_url": str(p.get("base_url") or "").rstrip("/"), "kind": p.get("kind"),
                 "api_key_env": p.get("api_key_env") or "", "user_agent": p.get("user_agent") or "snaplab/0.1",
-                "timeout_s": p.get("timeout_s", 600), "context_limit": int(m.get("context_limit") or 131072),
+                "timeout_s": p.get("timeout_s", 0), "context_limit": int(m.get("context_limit") or 131072),
                 "effort_style": m.get("effort_style", "none"), "extra": {**(p.get("extra") or {}),
                                                                                         **(m.get("extra") or {})},
                 "label": m.get("label") or name, "key_expires": p.get("key_expires"),

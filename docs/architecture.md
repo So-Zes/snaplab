@@ -138,9 +138,10 @@ instruction, ...) and the reason it was asked, so it reads the same in every lan
 
 ### Memory
 
-Each bot keeps short notes in `memory.md` (4,000 characters); "remember ..." appends a dated line, "forget ..."
-removes the lines that contain the words, and a write past the limit is refused with a request to tidy up first.
-The lead bot also keeps `shared/user.md` (1,400 characters), which every bot reads; the user edits it under
+Each bot keeps notes in `memory.md` (no size limit unless `memory_chars` sets one, since 2026-11-21); "remember ..."
+appends a dated line, "forget ..." removes the lines that contain the words, and with a configured limit a write past
+it is refused with a request to tidy up first. Any bot also writes `shared/user.md` (no size limit unless
+`user_note_chars` sets one), which every bot reads; the user edits it under
 Settings → About you, and a bot's notes on its page (list with Forget, Add a note, or edit as text). Every change
 is also appended to `daily/<date>.md`, which is never loaded into a model call.
 
@@ -240,9 +241,10 @@ are stored keep their key and values next to the text, so the phone shows them i
 below). Projects, SnapCode and the bot list open from the dashboard; a bot's inside screen opens from the name at
 the top of its chat. The chat list ends with New group and New bot.
 
-**Roles.** The lead sees every bot, project and memory (`read_memory`). Any bot can create and own several
-projects; assignment keeps its other projects. Shared projects are read-only. Tools, context and `archive.Scope`
-enforce current access, and only owners or the lead may mutate a project or its SnapCode.
+**Roles.** Every bot sees every project and every bot's memory (`read_memory`) and may change any project and its
+SnapCode (since 2026-11-21; before, only owners and the lead could). Any bot can create and own several projects;
+assignment keeps its other projects. The lead usually hands projects out. Owning or being shared a project only
+decides which projects a bot's context shows (`access.looked_after`).
 
 **Memory in three layers.**
 
@@ -357,12 +359,10 @@ The knowledge file stays in the session worktree and is excluded from Git with t
 ## Project ownership and bot conversations
 
 `access.py` resolves current project ownership from `project.bot`. Every bot can create projects and owns
-what it creates; a bot can own several projects. `App.set_owner` moves only the selected project. The lead
-can manage all projects and reassign them. `share_project` lets the owner or lead grant/revoke another bot's
-read-only access through optional `project.shared_with`. Read and write checks differ: shared projects expose
-their BRIEF, sessions and project-scoped archive records but cannot be modified or run by the reader. The
-same checks apply to tools, context, the inside screen and approval consumption. Project-scoped archive
-records require current project access even if the reader authored them or belongs to their original room.
+what it creates; a bot can own several projects. `App.set_owner` moves only the selected project. Every bot may
+read and manage every project, its BRIEF, sessions and project-scoped archive records (since 2026-11-21). A
+share (`share_project`, optional `project.shared_with`) adds a project to that bot's context next to the ones it
+owns (`access.looked_after`); it no longer grants or limits access.
 
 `Toolbox` exists for one bot turn. Successful external reads also persist their bot, turn and source under
 the current origin in `bot-conversations.json`. Later turns inherit those reads across bots and rooms;
@@ -381,17 +381,16 @@ session. Session follow-ups retain these reads because their context can still c
 the source room. There is no private bot mailbox. Delivery and subsequent replies use the existing room
 queue and `followup` slot priority, behind the user's chat, through the configured model registry and shared
 OS lock files (`slots.count`). All group members can contribute or return `[SILENT]`;
-mentions determine order. Follow-ups continue until everyone stays silent, a question needs the user, or a
-configured limit applies. A direct address to the configured user name combined with a clear English or
-Japanese reply/approval wait sets `needs_you` even without a question mark. That origin waits for the user;
-already queued turns also skip it. A new human message starts a fresh origin. Text is withheld from group
-streaming until duplicate checking finishes.
+mentions determine order. Follow-ups continue until everyone stays silent, a question needs the user, the user
+says stop, or a configured limit applies (there is none by default). A direct address to the configured user name
+combined with a clear English or Japanese reply/approval wait sets `needs_you` even without a question mark. That
+origin waits for the user; already queued turns also skip it. A new human message starts a fresh origin.
 
-`dialogue.py` persists counters, recent content fingerprints and stopped conversations in
-`bot-conversations.json`, under the store lock. One originating human message retains its budget when a bot
-sends to another room or creates a group. `bot_conversations.max_consecutive` defaults to 6 attempts across
-the conversation, `max_hourly` (attempts per bot in a rolling hour across groups) to 0, meaning no limit, and
-`repeat_window` to 20 recent normalized texts per conversation. Silent/error turns and outgoing tool messages
+`dialogue.py` persists counters and stopped conversations in `bot-conversations.json`, under the store lock.
+One originating human message retains its budget when a bot sends to another room or creates a group.
+`bot_conversations.max_consecutive` (attempts across the conversation) and `max_hourly` (attempts per bot in a
+rolling hour across groups) default to 0, meaning no limit (until 2026-11-21 the conversation stopped after 6
+attempts and a text repeating one of the last 20 was refused). Silent/error turns and outgoing tool messages
 count before execution. One-to-one user replies do not consume these limits. Limits do not automatically resume
 work: the user sends another message. Stop text or the Stop button cancels connected queued/running turns and
 persists the stopped origin; new messages can start a new origin, never revive an old one. New Bot groups

@@ -80,7 +80,8 @@ class LanguageTest(unittest.TestCase):
         self.assertFalse(prompts.wrong_language("できました。", "en", "日本語で答えて"))
         self.assertTrue(prompts.wrong_language("できました。プロジェクトを作りました。", "en", "Please create it"))
 
-    def test_brief_in_the_wrong_language_is_refused_and_the_template_follows_the_app(self):
+    def test_brief_in_another_language_is_accepted_and_the_template_follows_the_app(self):
+        # Tool arguments in another language are no longer refused (2026-11-21); replies still follow the room.
         from snaplab.tools import Toolbox
         app, _, _ = make_app()
         room = onboard(app)["room"]["id"]
@@ -88,9 +89,10 @@ class LanguageTest(unittest.TestCase):
         app.chat.post(room, "Write the brief")
         box = Toolbox(app, app.store.orchestrator(), room=app.store.room(room), lang="en")
         res = box("write_brief", {"project": p["id"], "text": "# Word stats\n\n## 目標\n単語を数える小さなモジュール。"}, "c1")
-        self.assertIn("write text in English", res.content)
+        self.assertNotIn("Error", res.content)
+        self.assertIn("単語を数える", app.read_brief(p["id"]))
         res = box("assign_project", {"project": p["id"], "bot": "Marlin", "note": "BRIEF を読んで進めてください。"}, "c2")
-        self.assertIn("write note in English", res.content)
+        self.assertNotIn("write note in English", res.content)
         app2, _, _ = make_app()
         onboard(app2, lang="ja", name="ミナト")
         p2 = app2.create_project(name="文字数カウンタ", description="文字を数える")

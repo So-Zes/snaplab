@@ -43,7 +43,7 @@ class RobustChatTest(unittest.TestCase):
 
     def test_error_codes_and_try_again(self):
         answers = iter([{"content": "", "error_status": 429, "error_text": '{"error": {"message": "busy"}}'},
-                        {"content": "Second time lucky."}])
+                        {"content": "Second time lucky."}, {"content": "Third time."}])
         app, llm, _ = make_app(lambda m, t, e: next(answers))
         room = onboard(app)["room"]["id"]
         app.chat.post(room, "hi")
@@ -55,11 +55,13 @@ class RobustChatTest(unittest.TestCase):
         self.assertTrue(wait_until(lambda: done_replies(app, room)[-1].get("text") == "Second time lucky."))
         msgs = app.store.messages(room)
         self.assertTrue(next(m for m in msgs if m["id"] == bad["id"])["retried"])
-        with self.assertRaises(ValueError):
-            app.chat.retry(room, bad["id"])                    # only once
         # the failed reply is not shown to the model again
         self.assertEqual(len(llm.calls), 2)
         self.assertEqual(sum(1 for m in llm.calls[1]["messages"] if m["role"] == "assistant"), 0)
+        # "Try again" works any number of times (until 2026-11-21 only once)
+        self.assertTrue(wait_until(lambda: not app.chat.busy(room)))
+        app.chat.retry(room, bad["id"])
+        self.assertTrue(wait_until(lambda: done_replies(app, room)[-1].get("text") == "Third time."))
 
     def test_error_code_mapping(self):
         from snaplab.llm import Reply

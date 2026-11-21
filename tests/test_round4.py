@@ -57,7 +57,7 @@ class ServerTextsTest(unittest.TestCase):
     def test_approval_in_any_language_and_note_with_key(self):
         from test_core import script
         app, _, _ = make_app(script({"tool_calls": [{"name": "start_session", "arguments": {"project": "Demo", "harness": "bot", "prompt": "notes"}}]},
-                                    {"content": "Waiting."}))
+                                    {"content": "Waiting."}), approvals={"start_session": "always"})   # config asks for the card
         room = onboard(app, lang="ja")["room"]["id"]
         app.create_project(name="Demo", description="d")
         app.chat.post(room, "start")
@@ -89,7 +89,7 @@ class ResultReportTest(unittest.TestCase):
             {"tool_calls": [{"name": "start_session", "arguments": {"project": "Demo", "harness": "bot", "prompt": "write notes"}}]},
             {"tool_calls": [{"name": "write_file", "arguments": {"path": "notes/a.md", "content": "one\n"}}]},
             {"content": "Wrote notes/a.md."},
-            {"content": "Done: the note is written (1 file). Want me to merge it?"}))
+            {"content": "Done: the note is written (1 file). Want me to merge it?"}), approvals={"start_session": "always"})
         room = onboard(app)["room"]["id"]
         app.create_project(name="Demo", description="d")
         app.chat.post(room, "please")
@@ -131,20 +131,30 @@ class MemoryTest(unittest.TestCase):
         self.assertIn("Is not a morning person", messages[0]["content"])
         self.assertGreater(report["user"], 0)
 
-    def test_teammates_cannot_write_about_the_user_and_full_memory_is_refused(self):
+    def test_teammates_write_about_the_user_and_a_configured_full_memory_is_refused(self):
+        # Every bot may write the notes about the user since 2026-11-21; a size limit applies only when configured.
         from snaplab.memory import MemoryFull
         from snaplab.tools import Toolbox
         app, _, _ = make_app(memory_chars=120)
         onboard(app)
         coral = app.create_bot(name="Coral", role="r")
         box = Toolbox(app, app.store.bot(coral["id"]), room=app.store.dm_room(coral["id"]), lang="en")
-        res = box("write_memory", {"text": "x", "about": "user"}, "c1")
-        self.assertIn("only the lead bot", res.content)
+        res = box("write_memory", {"text": "Likes green tea", "about": "user"}, "c1")
+        self.assertEqual(res.content, "Saved.")
+        self.assertIn("Likes green tea", app.store.user_note())
         app.memory_write(coral["id"], "a" * 80)
         with self.assertRaises(MemoryFull):
             app.memory_write(coral["id"], "b" * 80)
         res = box("write_memory", {"text": "c" * 80}, "c2")
         self.assertIn("full", res.content)
+        unlimited, _, _ = make_app()                                  # the default: no size limit
+        onboard(unlimited)
+        lead = unlimited.store.orchestrator()
+        for _ in range(3):
+            unlimited.memory_write(lead["id"], "d" * 3000)
+        self.assertGreater(len(unlimited.store.memory(lead["id"])), 9000)
+        unlimited.memory_write(lead["id"], "e" * 3000, scope="user")
+        self.assertIn("e" * 3000, unlimited.store.user_note())
 
 
 class DisplayTest(unittest.TestCase):

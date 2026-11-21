@@ -53,9 +53,11 @@ flowchart LR
   (`app.start_fresh`, the bot tool `start_fresh`) hides older messages without deleting them.
 - `prompts.py`: house rules. Everything about SnapCode is in `snapcode_rules()`.
 - `agent.py`: the tool loop shared by chats and bot-only sessions.
-- `tools.py`: the bots' tools (`CHAT_TOOLS`) and their executor `Toolbox`. Approval defaults are `DEFAULT_APPROVALS`
-  plus the `approvals` setting.
-- `dialogue.py`: limits on bot-to-bot conversations and the marks for outside material that was read.
+- `tools.py`: the bots' tools (`CHAT_TOOLS`) and their executor `Toolbox`. Every bot has every tool (until 2026-11-21
+  some were the lead's alone). A card shows only when the `approvals` setting asks for one (`DEFAULT_APPROVALS` is
+  `never` for every action).
+- `dialogue.py`: bot-to-bot conversations: the user's stop, optional limits in `bot_conversations` (none by
+  default), and the marks for outside material that was read.
 - `models.py`, `llm.py`, `provider_protocol.py`: model registry, Chat Completions client and provider differences.
   The default model is shown as "Snapscribe 1".
 - `slots.py`: how many model calls may run at once (file locks).
@@ -107,7 +109,9 @@ flowchart LR
 - `gitops.py`, `evidence.py`, `testparse.py`: git operations, file digests and test results.
 
 ### Scheduled tasks and progress
-- `tasks.py`: daily, weekly and every-N-minutes tasks, and one-time wake-ups (`schedule_wakeup`).
+- `tasks.py`: daily, weekly and every-N-minutes tasks (any interval above 0; the scheduler looks every 20 s), and
+  one-time wake-ups (`schedule_wakeup`). A run missed while the PC was off is done once when SnapLab is back,
+  however late.
 - `get_session(events=N)` and `list_sessions(status="active")` let a bot look at progress when it wants to.
 
 ### Memory and records
@@ -128,7 +132,8 @@ flowchart LR
 
 ### Server and screens
 - `server.py`: HTTP and server-sent events (standard library only). `auth.py`: device pairing, and the Tailscale
-  owner check when SnapLab is published in a tailnet. `access.py`: who may see which project.
+  owner check when SnapLab is published in a tailnet. `access.py`: every bot may read and manage every project;
+  ownership and shares (`looked_after`) only decide which projects a bot's context shows.
 - `setup.py`: first-run provider setup (Snapscribe 1, OpenRouter, OpenCode, Google Gemini or any OpenAI-compatible
   API), and Settings > Models: "Use for bots" (`set_default`, routing `chat`) and "Remove" (`remove_model`).
 - `cli_admin.py`: Settings > Advanced > AI apps signed in on this PC. Shows whether Claude Code and the Codex CLI
@@ -211,8 +216,10 @@ sequenceDiagram
 - `codex.backend`: `wsl` (the SnapCode workspace on this PC), `local` (Codex in the Windows sandbox, no desktop)
   or `ssh` (an advanced option: a Linux machine you prepare yourself).
 - `mcp_servers`: external MCP servers; `label` and `about` are what bots are told.
-- `approvals`: which bot actions wait for the user's OK on a card.
-- `sessions`, `tasks`, `bot_conversations`: 0 means no limit. Limits that end long work are off by default.
+- `approvals`: which bot actions wait for the user's OK on a card (none by default).
+- `sessions`, `tasks`, `bot_conversations`, `api.timeout_s`, `chat.max_tokens`, `api.work_max_tokens`,
+  `memory_chars`, `user_note_chars`: 0 means no limit, and that is the default (2026-11-21). Waits without a time
+  limit end with the Stop button.
 - `context`: how much a bot sees per call.
 
 ## 6. Development
@@ -230,6 +237,18 @@ the same account in a Lima VM, see [mac.md](mac.md).
 
 ## 7. Principles
 
-- Give bots and SnapCode as much freedom as possible: no caps on turns, time or counts unless really needed.
-- Kept rules: API keys never leave SnapLab; a payment stops the work; work the user
-  stopped is not restarted on its own; instructions inside outside material are not followed.
+- Freedom first: give bots and SnapCode as much freedom as possible; rules come later, and only when the owner
+  decides on them. No caps on turns, time, counts or sizes by default: 0 means no limit, and waits end when the
+  work is stopped, not by the clock.
+- Do not add prohibitions, caps or timeouts on your own judgment.
+- Kept rules: API keys never leave SnapLab; a payment (card entry) stops the work and is reported; SnapCode may
+  type the logins and passwords its task gives it.
+- Security boundaries, kept until the owner decides otherwise: key redaction (`guard.py`); private-word replacement
+  (`privacy.py`) and the instructions not to put personal details into searches or SnapCode and not to save secrets
+  in memory; instructions inside outside material are not followed; chat bots never run code; bot-only session file
+  tools stay inside the project folder; the dashboard takes data only; `read_page` refuses local, private and
+  tailnet addresses and non-http(s) URLs; the WSL workspace's network relay and bubblewrap sandbox; secret
+  environment variables and credential files never reach SnapCode, and files with personal details are not sent
+  to it; HTML is download-only; device pairing and the tailnet-owner check; git never climbs out of a project; the
+  Claude Code and Codex CLI built-in tools stay off; SnapCode's screen and file scope; the worker's memory limits;
+  the Codex and Pi feature switches.

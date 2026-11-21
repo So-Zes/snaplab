@@ -21,6 +21,13 @@ from snaplab.llm import FakeLLM  # noqa: E402
 
 OWNER = "owner@example.com"
 
+# The approval cards that were SnapLab's defaults until 2026-11-21. Every action now runs without a card unless config
+# "approvals" asks for one; tests of the card and web-read provenance machinery set these, as a config.json can.
+CARD_APPROVALS = {"create_bot": "always", "start_session": "always", "schedule_task": "always",
+                  "send_to_session": "after_web", "create_project": "after_web", "update_dashboard": "after_web",
+                  "write_memory": "after_web", "write_brief": "after_web", "assign_project": "after_web",
+                  "share_project": "after_web", "message_bot": "after_web", "create_group": "after_web"}
+
 
 def fake_credential_api(values):
     """An in-memory CredReadW/CredFree pair; never loads the Windows DLL."""
@@ -83,8 +90,15 @@ def fake_page(url):
             "content_type": "text/html"}
 
 
+# SnapLab has no default limit on bot-to-bot replies (2026-11-21). The scripted test bots always answer, so in a group
+# they would talk on in the background after a test ends and leak into later tests; the test apps keep a budget.
+# A test of the real default passes bot_conversations={} (or its own values).
+TEST_BOT_BUDGET = {"max_consecutive": 12}
+
+
 def make_app(responder=None, *, tmp: str | None = None, **over) -> tuple[App, FakeLLM, list]:
     tmp = tmp or tempfile.mkdtemp(prefix="snaplab-test-")
+    over.setdefault("bot_conversations", dict(TEST_BOT_BUDGET))
     sent: list = []
     cfg = config.load(path=Path(tmp) / "none.json", overrides={
         "data_dir": str(Path(tmp) / "data"), "owner_login": OWNER, "public_url": "https://pc.example.ts.net:8445",

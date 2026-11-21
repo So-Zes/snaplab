@@ -271,7 +271,7 @@ class Store:
             with open(p, "a", encoding="utf-8") as f:
                 f.write(f"- {stamp:%H:%M} {line}\n")
 
-    def write_memory(self, bot_id: str, text: str, mode: str = "append", limit: int = 20000) -> str:
+    def write_memory(self, bot_id: str, text: str, mode: str = "append", limit: float | None = None) -> str:
         with self.lock:
             p = self.path("bots", bot_id, "memory.md")
             p.parent.mkdir(parents=True, exist_ok=True)
@@ -281,8 +281,8 @@ class Store:
             else:
                 stamp = dt.datetime.now().strftime("%Y-%m-%d")
                 new = (cur.rstrip() + "\n" if cur.strip() else "") + f"- [{stamp}] {' '.join(text.split())}\n"
-            if len(new) > limit:
-                new = new[-limit:]
+            if limit and limit != float("inf") and len(new) > limit:       # only when a size limit is configured
+                new = new[-int(limit):]
             if self.guard:
                 new = self.guard.clean(new)
             p.write_text(new, encoding="utf-8")

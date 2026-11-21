@@ -547,8 +547,6 @@ class SessionManager:
                 if not first:
                     task += '\n\nEarlier conversation (reference):\n' + '\n'.join(
                         e.get('kind', '') + ': ' + str(e.get('text', '')) for e in history[:-1])[-16000:]
-                if s.get('task_kind') == 'web':
-                    task += '\nBuild in stages: write a short plan; create the smallest working app; test it; then capture a phone-width PNG and attach it. Write files between stages. Do not generate the whole app in one response.'
                 if s.get('required_files'):
                     task += '\nRequired output files: ' + ', '.join(s['required_files'])
             try:
@@ -622,8 +620,8 @@ class SessionManager:
                 tested_version = artifact_version(folder)
                 ctl.emit({"kind": "note", "text": app.t("ev.tests.run"), "key": "ev.tests.run"})
                 code, out = sandbox_run(app, sid, folder, project["test_command"],
-                                        float(app.cfg["sessions"]["test_timeout_s"]),
-                                        git_dir=Path(s["git_dir"]) if s.get("git_dir") else None)
+                                        app.cfg["sessions"].get("test_timeout_s") or 0,
+                                        git_dir=Path(s["git_dir"]) if s.get("git_dir") else None, cancel=ctl.cancelled)
                 tests = parse_tests(code, out)
                 tests.update(tested_version=tested_version, version_after=artifact_version(folder),
                              exit_code=code, source_type="runtime")

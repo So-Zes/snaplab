@@ -1,12 +1,10 @@
-"""Persistent, cross-room limits and external-read provenance for bot conversations."""
+"""Bot conversations across rooms: the user's stop, optional limits (none by default) and external-read provenance."""
 from __future__ import annotations
 
-import hashlib
 import re
 import time
-import unicodedata
 
-DEFAULTS = {"max_consecutive": 6, "max_hourly": 0, "repeat_window": 20}   # max_hourly 0 = no limit
+DEFAULTS = {"max_consecutive": 0, "max_hourly": 0}   # 0 = no limit (config "bot_conversations" may set one)
 
 
 def session_origin(sid: str) -> str:
@@ -25,15 +23,6 @@ def stop_requested(text):
                 or re.fullmatch(russian, text, re.I))
 
 
-def signature(text):
-    text = unicodedata.normalize("NFKC", text).casefold()
-    original = text
-    text = re.sub(r"@[a-z0-9_-]+\b", "", text)
-    text = "".join(c for c in text if c.isalnum())
-    text = text or "".join(c for c in original if c.isalnum()) or original.strip()
-    return hashlib.sha256(text.encode("utf-8")).hexdigest() if text else ""
-
-
 class DialogueLimits:
     def __init__(self, app):
         self.app, self.store = app, app.store
@@ -41,9 +30,7 @@ class DialogueLimits:
     def settings(self):
         cfg = self.app.cfg.get("bot_conversations") or {}
         from .config import limit
-        out = {k: max(1, int(cfg.get(k, v))) for k, v in DEFAULTS.items() if k != "max_hourly"}
-        out["max_hourly"] = limit(cfg.get("max_hourly", DEFAULTS["max_hourly"]))
-        return out
+        return {k: limit(cfg.get(k, v)) for k, v in DEFAULTS.items()}
 
     def _load(self):
         data = self.store.read_json("bot-conversations.json", {"chains": {}, "hour": []})
@@ -56,7 +43,7 @@ class DialogueLimits:
     def register(self, origin, room):
         with self.store.lock:
             data = self._load()
-            chain = data["chains"].setdefault(origin, {"count": 0, "rooms": [], "texts": [], "stopped": False})
+            chain = data["chains"].setdefault(origin, {"count": 0, "rooms": [], "stopped": False})
             if room and room not in chain["rooms"]:
                 chain["rooms"].append(room)
             self._save(data)
@@ -109,20 +96,11 @@ class DialogueLimits:
             return None
 
     def accept_text(self, origin, text):
-        sig = signature(text)
-        if not sig:
-            return True
-
+        """False only when the user stopped this conversation. A text that repeats an earlier one is accepted
+        (until 2026-11-21 the same text as one of the last 20 was refused)."""
         with self.store.lock:
-            data = self._load()
-            chain = data["chains"].get(origin)
-            if not chain or chain.get("stopped"):
-                return False
-            if sig in chain["texts"]:
-                return False
-            chain["texts"] = (chain["texts"] + [sig])[-self.settings()["repeat_window"]:]
-            self._save(data)
-            return True
+            chain = self._load()["chains"].get(origin)
+            return bool(chain) and not chain.get("stopped")
 
     def reserve_session(self, bot):
         """Session starts and follow-ups share the bot's durable hourly activity limit."""

@@ -24,7 +24,7 @@ import threading
 import time
 import urllib.error
 import urllib.request
-from .provider_protocol import open_request, prepare, tool_fragments
+from .provider_protocol import RequestCancelled, open_request, prepare, tool_fragments
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -659,6 +659,13 @@ class _Handler(BaseHTTPRequestHandler):
         if tg.get("effort_style", "none") != "chat_template_kwargs":
             chat["messages"] = [{k: v for k, v in m.items() if k != "reasoning_content"} for m in chat["messages"]]
         chat = guard.clean_obj(chat)
+        if not getattr(t, "output_limit", 0):
+            # No configured reply limit (the default since 2026-11-21): the reply may use the room the context window
+            # leaves, and the model's own output limit still applies in prepare(). A fixed reserve would refuse long
+            # contexts earlier than the 20,000-token limit did.
+            from .provider_protocol import estimate_input
+            room = max(1, int(tg.get('context_limit') or 131072) - estimate_input(chat) - 1024)
+            chat['max_tokens'] = min(int(chat.get('max_tokens') or room), room)
         try:
             chat = prepare(chat, tg)
         except Exception as exc:
@@ -694,7 +701,9 @@ class _Handler(BaseHTTPRequestHandler):
                     t.calls += 1
             t_send = time.perf_counter()
             try:
-                upstream = open_request(req, timeout=float(tg.get("timeout_s") or t.timeout))
+                from .config import wait_s
+                upstream = open_request(req, timeout=wait_s(tg.get("timeout_s")) if tg.get("timeout_s") else t.timeout,
+                                        cancel=t.cancelled.is_set)
                 with t._active_lock:
                     if t.cancelled.is_set():
                         upstream.close()
@@ -717,6 +726,8 @@ class _Handler(BaseHTTPRequestHandler):
                 t.log({**rec, "status": e.code, "error_body": text, "session_id": getattr(t, 'session_id', '')})
                 t.usage(0, 0, False, tg['name'])
                 return self._json(e.code, {"error": err})
+            except RequestCancelled:
+                return self._json(503, {"error": {"message": "translator stopped"}})
             except (urllib.error.URLError, TimeoutError, OSError) as e:
                 t.uncertain = True
                 t.last_error = "model server unreachable: " + guard.clean(str(getattr(e, "reason", e)))[:120]
@@ -822,7 +833,8 @@ class Translator:
         self.base_url = api_cfg["base_url"].rstrip("/")
         self.model = api_cfg["model"]
         self.key_env = api_cfg.get("api_key_env") or "SNAPSCRIBE_API_KEY"
-        self.timeout = float(api_cfg.get("timeout_s", 600))
+        from .config import wait_s
+        self.timeout = wait_s(api_cfg.get("timeout_s"))          # None (the default): no time limit
         self.user_agent = api_cfg.get("user_agent") or "snaplab/0.1"
         self.slots = slots
         self.key = key_fn

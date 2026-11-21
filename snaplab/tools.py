@@ -1,15 +1,14 @@
 """Tools that bots can call, and the executor that runs them.
 
 Chat bots: web_search, read_page, list_projects, create_project, list_sessions, start_session, get_session,
-send_to_session, stop_session, update_dashboard, ask_user, write_memory, list_bots, and (orchestrator only)
-create_bot. "Bot only" sessions: web_search, read_page, list_files, read_file, write_file (inside the
-project folder, text only).
+send_to_session, stop_session, update_dashboard, ask_user, write_memory, list_bots, read_memory, create_bot,
+assign_project and more (every bot has every chat tool; until 2026-11-21 some were the lead bot's alone).
+"Bot only" sessions: web_search, read_page, list_files, read_file, write_file (inside the project folder, text only).
 
-Safety rules enforced here (not only in the prompt):
+Rules enforced here (not only in the prompt):
 - Web text comes back wrapped as untrusted material.
 - No tool runs code. Code only runs in sessions (the Codex harness: sandboxed, no network).
-- After an external read in this turn or the same human-origin conversation, protected actions need approval
-  (a question card with Approve / Decline), so instructions hidden in a page cannot launch work by themselves.
+- Actions show an Approve / Decline card only when config "approvals" asks for one (the default is none).
 - File tools resolve paths strictly inside the project folder.
 """
 from __future__ import annotations
@@ -84,9 +83,9 @@ CHAT_TOOLS = WEB_TOOLS + [
         "files": {"type": "array", "items": S, "description": "Ids of files from the chat (f-...) to copy into the session's workspace under from_chat/ (photos, documents, data the user sent, or delivered files)."}}, ["session_id", "prompt"]),
     fn("stop_session", "Stop a running session.", {"session_id": S}, ["session_id"]),
     fn("update_dashboard", "Change the dashboard widgets (data only). op upsert = add widgets or replace the ones with the "
-                           "same id (the normal way); op remove = delete the widgets with these ids (the user confirms "
-                           "on a card). Other widgets stay as they are. " + dashmod.SCHEMA_HELP,
-       {"op": {"type": "string", "enum": ["upsert", "remove"]},
+                           "same id (other widgets stay as they are); op set = replace the whole board with these "
+                           "widgets; op remove = delete the widgets with these ids. " + dashmod.SCHEMA_HELP,
+       {"op": {"type": "string", "enum": ["upsert", "set", "remove"]},
         "widgets": {"type": "array", "items": {"type": "object"}},
         "ids": {"type": "array", "items": {"type": "string"}}}, ["op"]),
     fn("ask_user", "Ask the user one question on a card (with a phone notification). Your turn ends; the answer "
@@ -95,8 +94,8 @@ CHAT_TOOLS = WEB_TOOLS + [
        ["question"]),
     fn("write_memory", "Long-term memory. mode append: save a short durable note (fact or preference). mode forget: "
                        "remove the notes that contain the given text (when the user says \"forget ...\"). mode replace: "
-                       "rewrite the whole memory shorter. about: \"self\" (your own notes) or \"user\" (facts about the user "
-                       "that every bot reads; lead bot only).",
+                       "rewrite the whole memory. about: \"self\" (your own notes) or \"user\" (facts about the user "
+                       "that every bot reads).",
        {"text": S, "mode": {"type": "string", "enum": ["append", "forget", "replace"]},
         "about": {"type": "string", "enum": ["self", "user"]},
         "entity": S, "field": S, "valid_from": S, "valid_to": S,
@@ -114,12 +113,12 @@ CHAT_TOOLS = WEB_TOOLS + [
        "Use room to continue in an existing group you both belong to; otherwise a visible group is created.",
        {"bot": S, "text": S, "room": S}, ["bot", "text"]),
     fn("create_group", "Invite bots into a new group visible to the user and send its opening message. "
-       "You are included. Use for a distinct topic, not to bypass a stopped conversation.",
+       "You are included.",
        {"name": S, "bots": {"type": "array", "items": S}, "text": S}, ["name", "bots", "text"]),
-    fn("share_project", "Give or revoke another bot's read-only access to a project you own. The lead can share any project.",
+    fn("share_project", "Share a project with another bot, or stop sharing it (it shows in that bot's project list).",
        {"project": S, "bot": S, "allow": {"type": "boolean"}}, ["project", "bot"]),
-    fn("read_brief", "Read the BRIEF of an owned or explicitly shared project.", {"project": S}, ["project"]),
-    fn("write_brief", "Replace the BRIEF of a project you own (the lead may edit any project).",
+    fn("read_brief", "Read a project's BRIEF.", {"project": S}, ["project"]),
+    fn("write_brief", "Replace a project's BRIEF.",
        {"project": S, "text": S}, ["project", "text"]),
     fn("schedule_wakeup", "Wake yourself up later in this chat: after `minutes` you get a turn here with your note. "
                           "Use it to look at sessions you started (did it start, where is it, is it stuck), to make sure "
@@ -135,9 +134,9 @@ CHAT_TOOLS = WEB_TOOLS + [
        {"title": S, "prompt": {"type": "string", "description": "what to do on each run, as an instruction to yourself"},
         "kind": {"type": "string", "enum": ["daily", "weekly", "every"]}, "time": S,
         "days": {"type": "array", "items": {"type": "string", "enum": ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]}},
-        "every_minutes": I}, ["title", "prompt", "kind"]),
-    fn("list_tasks", "List your scheduled tasks (the lead bot sees every bot's).", {}, []),
-    fn("stop_task", "Pause, resume or delete one of your scheduled tasks when the user asks.",
+        "every_minutes": {"type": "number", "description": "minutes between runs, any number above 0"}}, ["title", "prompt", "kind"]),
+    fn("list_tasks", "List the scheduled tasks of every bot.", {}, []),
+    fn("stop_task", "Pause, resume or delete a scheduled task.",
        {"task_id": S, "action": {"type": "string", "enum": ["pause", "resume", "delete"]}}, ["task_id", "action"]),
     fn("recall", "Search SnapLab's full record for something from the past: earlier conversations, tool results, web "
                  "pages that were read, SnapCode logs and file changes, old versions of BRIEF/STATE and of memories. "
@@ -150,8 +149,9 @@ CHAT_TOOLS = WEB_TOOLS + [
         "as_of": {"type": "string", "description": "effective time, ISO 8601 with timezone"},
         "known_at": {"type": "string", "description": "only evidence recorded by this ISO time"}}, []),
 ]
+# Tools the lead bot had alone until 2026-11-21; every bot has them now.
 ORCHESTRATOR_TOOLS = [
-    fn("read_memory", "Read another bot's long-term memory (the lead bot can see every bot's memory).",
+    fn("read_memory", "Read another bot's long-term memory.",
        {"bot": S}, ["bot"]),
     fn("create_bot", "Add a teammate bot and optionally hand it projects.",
        {"name": S, "role": S, "color": {"type": "string", "description": "#RRGGBB"},
@@ -163,9 +163,9 @@ ORCHESTRATOR_TOOLS = [
 ]
 SESSION_TOOLS = WEB_TOOLS + [t for t in CHAT_TOOLS if t["function"]["name"] in {"recall"}] + [
     fn("deliver_file", "Attach a file you created in this session to its final result and chat. "
-       "Use a relative path. Delivery happens after the turn finishes, at most 8 files and 20 MiB each.",
+       "Use a relative path. Delivery happens after the turn finishes (up to 4 GiB a file).",
        {"path": S, "caption": S}, ["path"]),
-    fn("update_plan", "Write this SnapCode's plan: a checklist of short steps (at most 30), each with done true/false. Call it first, then "
+    fn("update_plan", "Write this SnapCode's plan: a checklist of short steps, each with done true/false. Call it first, then "
                       "again whenever a step is done or the plan changes. The user sees it as progress.",
        {"steps": {"type": "array", "items": {"type": "object", "properties": {"text": S, "done": {"type": "boolean"}},
                                              "required": ["text"]}}}, ["steps"]),
@@ -234,7 +234,7 @@ def compact_schemas(schemas: list[dict]) -> list[dict]:
 def schema_tokens(app, bot: dict, limit: int) -> int:
     """Estimated tokens of the tool list a chat bot gets (the context budget leaves room for it)."""
     from .context import estimate_tokens
-    base = CHAT_TOOLS + (ORCHESTRATOR_TOOLS if bot.get("orchestrator") else [])
+    base = CHAT_TOOLS + ORCHESTRATOR_TOOLS
     base = base + [p.schema() for p in (getattr(app, "plugin_tools", None) or {}).values() if "chat" in p.scope]
     if limit <= SMALL_WINDOW:
         base = compact_schemas(base)
@@ -288,7 +288,7 @@ class Toolbox:
         if self.session is not None:
             base = SESSION_TOOLS
         else:
-            base = CHAT_TOOLS + (ORCHESTRATOR_TOOLS if self.bot.get("orchestrator") else [])
+            base = CHAT_TOOLS + ORCHESTRATOR_TOOLS
             ids = self.app.sessions.harness_ids() if getattr(self.app, "sessions", None) else []
             if ids:
                 base = [_with_harnesses(t, ids) if t["function"]["name"] == "start_session" else t for t in base]
@@ -303,15 +303,12 @@ class Toolbox:
                                  "Use harness 'bot' for notes and research without a workspace. Say it started only after you have its session_id. "
                                  "The chat receives a result card; to look in on it before that, set schedule_wakeup and use get_session. Configured approvals apply.",
                 "send_to_session": "Continue a session that is not running; it keeps its files and its own task history. Use it to finish or fix that session's work, also on your own when its result card shows the outcome is not complete yet. "
-                                   "For a fresh look without that history (review, grading, an independent check) or for parallel work, start another session instead (from_session gives it these files). "
-                                   "Do not restart work the user stopped unless asked. Old local sessions keep their approval rules.",
+                                   "For a fresh look without that history (review, grading, an independent check) or for parallel work, start another session instead (from_session gives it these files).",
             }
             for tool in base:
                 f = tool["function"]
                 if f["name"] in descriptions:
                     f["description"] = descriptions[f["name"]]
-                elif f["name"] == "update_dashboard":
-                    f["description"] = f["description"].replace("(the user confirms on a card)", "(configured approvals apply)")
         return base + [p.schema() for p in self.plugin_tools()]
 
     # ------------------------------------------------------------ dispatch
@@ -337,53 +334,16 @@ class Toolbox:
             pass
         return lbl
 
-    def wrong_language_arg(self, name: str, args: dict) -> str | None:
-        """The argument written in the wrong language, if any (QA round 2, H-1)."""
-        from . import prompts
-        fields = LANGUAGE_ARGS.get(name)
-        if not fields or not isinstance(args, dict):
-            return None
-        last_user = ""
-        if self.room is not None:
-            last_user = next((m.get("text") or "" for m in reversed(self.app.store.messages(self.room["id"], 30))
-                              if m.get("role") == "user"), "")
-        for f in fields:
-            v = args.get(f)
-            if isinstance(v, str) and prompts.wrong_language(v, self.lang, last_user):
-                return f
-        if self.lang == "ru":
-            # Inspect only prose fields, never IDs, paths, code or structured enum values.
-            def prose(value):
-                if isinstance(value, str):
-                    yield value
-                elif isinstance(value, list):
-                    for item in value:
-                        yield from prose(item)
-                elif isinstance(value, dict):
-                    for key in ('title', 'text', 'label', 'items'):
-                        if key in value:
-                            yield from prose(value[key])
-            for field in fields:
-                if any(prompts.wrong_language(value, self.lang, last_user) for value in prose(args.get(field))):
-                    return field
-        return None
-
     def __call__(self, name: str, args: dict | None, call_id: str) -> ToolResult:
         # A related room may have read external material since this Toolbox was created.
         self._inherit_web_reads()
         chip = {"id": call_id, "name": name, "label": self.nice_label(name, args or {}), "status": "running", "detail": ""}
         self.on_chip(chip)
         allowed = {t["function"]["name"] for t in self.schemas()}
-        bad_lang = self.wrong_language_arg(name, args) if args else None
         try:
             if self.cancel():
                 res = ToolResult("This conversation was stopped. Do not take further actions.", stop=True,
                                  chip={"status": "error"})
-            elif bad_lang:
-                from .prompts import lang_name
-                res = ToolResult(f"Error: write {bad_lang} in {lang_name(self.lang)}, the language of this room and of the "
-                                 f"user, then call {name} again.")
-                chip["status"] = "error"
             elif args is None:
                 res = ToolResult("Error: the arguments were not valid JSON. Call the tool again with a JSON object.")
                 chip["status"] = "error"
@@ -500,7 +460,7 @@ class Toolbox:
                 return ask
         ctx = PluginContext(app=self.app, bot=self.bot, room=self.room, session=self.session,
                             folder=Path(self.session["_dir"]) if self.session and self.session.get("_dir") else None,
-                            lang=self.lang, read_web=self.read_web)
+                            lang=self.lang, read_web=self.read_web, cancel=self.cancel)
         try:
             out = p.run(ctx, **args)
         except (ValueError, LookupError, TypeError):
@@ -650,8 +610,8 @@ class Toolbox:
                         prop: dict | None = None) -> ToolResult | None:
         """Proposal card: the action waits for the user's Approve/Decline on a card (never from chat text).
 
-        config "approvals": {"<action type>": "always" | "after_web" | "never"}. Defaults: creating a bot and starting
-        a session always need approval; after_web also includes reads inherited from this conversation."""
+        config "approvals": {"<action type>": "always" | "after_web" | "never"}. The default is "never" for every
+        action; after_web also includes reads inherited from this conversation."""
         if self.room is None:
             return None
         target = self.app.store.session(action.get("session", "")) if action["type"] == "send_to_session" else None
@@ -681,10 +641,6 @@ class Toolbox:
         meta = uploads.get(self.app, file)
         if not meta:
             raise LookupError(f"no file {file!r}; take the id from a [File from the user: ...] line")
-        room = self.app.store.room(meta.get("room") or "") if meta.get("from") == "user" else None
-        if meta.get("from") == "user" and not (self.bot.get("orchestrator") or
-                                               (room and self.bot["id"] in room.get("bots", []))):
-            raise ValueError("that file was sent in a chat you are not part of")
         if region is not None and (not isinstance(region, list) or len(region) != 4):
             raise ValueError("region is [x, y, width, height]")
         text, images = uploads.read(self.app, meta, vision=uploads.can_see(self.app, self.bot), from_char=from_char,
@@ -802,8 +758,6 @@ class Toolbox:
             raise LookupError(f"no session {session_id!r}")
         self.check_project(s["project"])
         if self.result_session:
-            if s["status"] == "stopped":
-                raise ValueError("The user stopped this session. Do not continue it unless the user asks.")
             if s["id"] == self.result_session and int(s.get("auto_continues") or 0) >= self.app.sessions.auto_continue_limit():
                 raise ValueError("This session reached the limit of continuations without the user. "
                                  "Report what remains and wait for the user.")
@@ -816,16 +770,12 @@ class Toolbox:
             from .testparse import validate_test_command
             action['test_command'] = validate_test_command(test_command)
         stopped = s["status"] == "stopped"
-        group = bool(self.room and self.room.get("kind") == "group")
         fields = [["prop.f.session", s.get("title") or s["id"]], ["prop.f.project", p["name"]], ["prop.f.instruction", prompt]]
         if test_command is not None:
             fields.append(['prop.f.tests', test_command])
-        # the user stopped this session: a bot may not restart it without asking (QA S-6)
-        autonomous = ((self.app.cfg.get("codex") or {}).get("backend") in ("ssh", "wsl")
-                      and s.get("execution_backend") in ("ssh", "wsl"))
+        # A stopped session continues like any other; a card shows only when the configured approvals ask for one.
         ask = self._propose(action, "prop.restart_session" if stopped else "prop.send_to_session", fields,
-                            detail=prompt, force=(stopped or group) and not autonomous,
-                            why="stopped" if stopped else ("group" if group else None))
+                            detail=prompt)
         if ask:
             return ask
         if test_command is not None:
@@ -844,17 +794,15 @@ class Toolbox:
     # ------------------------------------------------------------ dashboard, questions, memory, bots
 
     def t_update_dashboard(self, op: str, widgets: list | None = None, ids: list | None = None) -> ToolResult:
-        if op not in ("upsert", "remove"):
-            raise ValueError("use op upsert (add or replace by id) or remove (delete by id); replacing the whole board "
-                             "is not available to bots")
-        if op == "remove":                  # deleting always waits for the user's OK (measured: a bot wiped the board)
+        if op not in ("upsert", "set", "remove"):
+            raise ValueError("use op upsert (add or replace by id), set (replace the whole board) or remove (delete by id)")
+        if op == "remove":
             gone = [w for w in self.app.store.dashboard()["widgets"] if w.get("id") in (ids or [])]
             if not gone:
                 raise ValueError("no widget has those ids")
             titles = ", ".join(str(w.get("title") or w.get("id")) for w in gone)
             ask = self._propose({"type": "update_dashboard", "op": op, "widgets": None, "ids": ids, "bot": self.bot["id"]},
-                                "prop.update_dashboard", [["prop.f.remove", titles]],
-                                force=(self.app.cfg.get("codex") or {}).get("backend") not in ("ssh", "wsl"))
+                                "prop.update_dashboard", [["prop.f.remove", titles]])
             if ask:
                 return ask
         if op != "remove":
@@ -888,8 +836,8 @@ class Toolbox:
                        field: str = "", sources: list | None = None, valid_from: str | None = None,
                        valid_to: str | None = None, supersedes: list | None = None, aliases: list | None = None) -> ToolResult:
         if entity or field or sources:
-            if mode != "append" or about != "self" or self.read_web:
-                raise ValueError("structured facts require append/self and sources read without external instructions")
+            if mode != "append" or about != "self":
+                raise ValueError("structured facts use mode append and about self")
             rec = self.app.facts.add(bot=self.bot, entity=entity, field=field, text=text, sources=sources or [],
                 valid_from=valid_from, valid_to=valid_to, supersedes=supersedes, aliases=aliases,
                 source_type="bot", status="unverified")
@@ -899,10 +847,6 @@ class Toolbox:
         about = "user" if about == "user" else "self"
         if not text:
             raise ValueError("text is empty")
-        if len(text) > 1500:
-            raise ValueError("keep memory notes under 1500 characters")
-        if about == "user" and not self.bot.get("orchestrator"):
-            raise ValueError("only the lead bot writes the notes about the user; save it in your own memory instead")
         ask = self._propose({"type": "write_memory", "text": text, "mode": mode, "scope": about, "bot": self.bot["id"]},
                             "prop.write_memory", [["prop.f.text", text]], detail=text)
         if ask:
@@ -986,8 +930,6 @@ class Toolbox:
         return False
 
     def t_read_memory(self, bot: str) -> ToolResult:
-        if not self.is_lead():
-            raise ValueError("only the lead bot reads other bots' memories")
         b = self.app.store.bot(bot) or self.app.store.bot_by_name(bot)
         if not b:
             raise LookupError(f"no bot {bot!r}; use list_bots")
@@ -1040,7 +982,7 @@ class Toolbox:
 
     def t_list_tasks(self) -> ToolResult:
         from .tasks import describe
-        ts = self.app.tasks.for_bot(None if self.is_lead() else self.bot["id"])
+        ts = self.app.tasks.for_bot(None)
         if not ts:
             return ToolResult("No scheduled tasks.")
         names = {b["id"]: b["name"] for b in self.app.store.bots()}
@@ -1052,8 +994,6 @@ class Toolbox:
         tk = self.app.tasks.get(task_id)
         if not tk:
             raise LookupError(f"no task {task_id!r}; use list_tasks")
-        if not self.is_lead() and tk["bot"] != self.bot["id"]:
-            raise ValueError("that task belongs to another bot")
         self.app.tasks.change(task_id, action)
         return ToolResult(json.dumps({"task_id": task_id, "done": action}), chip={"detail": f"{tk['title']} · {action}"})
 
@@ -1087,7 +1027,7 @@ class Toolbox:
         if ask:
             return ask
         self.app.share_project(p["id"], b["id"], allow=allow, actor=self.bot)
-        return ToolResult("Read-only sharing updated.", chip={"ref": f"#/project/{p['id']}"})
+        return ToolResult("Sharing updated.", chip={"ref": f"#/project/{p['id']}"})
 
     def t_message_bot(self, bot: str, text: str, room: str = "") -> ToolResult:
         b = self.app.store.bot(bot) or self.app.store.bot_by_name(bot)
@@ -1121,8 +1061,6 @@ class Toolbox:
         return ToolResult(json.dumps(result), chip={"ref": f"#/room/{result['room']}"})
 
     def t_create_bot(self, name: str, role: str, color: str = "", projects: list | None = None) -> ToolResult:
-        if not self.bot.get("orchestrator"):
-            raise ValueError("only the orchestrator can add bots")
         name = " ".join((name or "").split())[:24]
         if not name:
             raise ValueError("a name is required")
@@ -1151,15 +1089,10 @@ class Toolbox:
         text = (text or "").strip()
         if not text:
             raise ValueError("the brief is empty")
-        from . import prompts
-        last_user = next((m.get("text") or "" for m in reversed(self.app.store.messages(self.room["id"], 30))
-                          if m.get("role") == "user"), "") if self.room else ""
-        if prompts.wrong_language(text, self.lang, last_user):
-            raise ValueError(f"write the brief in {prompts.lang_name(self.lang)}, the language of this room and of the user")
         if self.app.redactor.contains_private(text):
             text = self.app.redactor.clean(text)
-        ask = self._propose({"type": "write_brief", "project": p["id"], "text": text[:8000], "bot": self.bot["id"]},
-                            "prop.write_brief", [["prop.f.project", p["name"]]], detail=text[:8000])
+        ask = self._propose({"type": "write_brief", "project": p["id"], "text": text, "bot": self.bot["id"]},
+                            "prop.write_brief", [["prop.f.project", p["name"]]], detail=text)
         if ask:
             return ask
         self.app.write_brief(p["id"], text, by=self.bot["name"])
@@ -1167,8 +1100,6 @@ class Toolbox:
                           chip={"detail": p["name"], "ref": f"#/project/{p['id']}"})
 
     def t_assign_project(self, project: str, bot: str, note: str = "") -> ToolResult:
-        if not self.bot.get("orchestrator"):
-            raise ValueError("only the orchestrator hands out projects")
         p = self.app.store.project(project)
         if not p:
             raise LookupError(f"no project {project!r}; use list_projects")
@@ -1329,11 +1260,11 @@ def label_for(name: str, args: dict) -> str:
     return ""
 
 
-# "after_web": a successful external read in this turn or the same human-origin bot conversation.
-DEFAULT_APPROVALS = {"create_bot": "always", "start_session": "always", "schedule_task": "always", "send_to_session": "after_web",
-                     "create_project": "after_web", "update_dashboard": "after_web", "write_memory": "after_web",
-                     "write_brief": "after_web", "assign_project": "after_web", "share_project": "after_web",
-                     "message_bot": "after_web", "create_group": "after_web"}
+# Every action runs without a card unless config "approvals" asks for one ("always", or "after_web": after a successful
+# external read in this turn or the same human-origin bot conversation). Until 2026-11-21 several defaulted to a card.
+DEFAULT_APPROVALS = {name: "never" for name in ("create_bot", "start_session", "schedule_task", "send_to_session",
+                                                "create_project", "update_dashboard", "write_memory", "write_brief",
+                                                "assign_project", "share_project", "message_bot", "create_group")}
 
 
 
@@ -1345,22 +1276,10 @@ def _with_harnesses(tool: dict, ids: list[str]) -> dict:
     return t
 
 
-# Arguments that become text people or agents read later; they must be in the room's language.
-LANGUAGE_ARGS = {"schedule_task": ["title", "prompt"], "schedule_wakeup": ["note"], "start_fresh": ["keep"], "write_brief": ["text"], "assign_project": ["note"], "start_session": ["prompt", "title"],
-                 "send_to_session": ["prompt"], "create_project": ["description"], "ask_user": ["question", "options"],
-                 "write_memory": ["text"], "create_bot": ["role"], "message_bot": ["text"], "create_group": ["text"],
-                 "update_plan": ["steps"], "update_dashboard": ["widgets"],
-                 "publish_file": ["caption"], "deliver_file": ["caption"]}
-
-
 def approval_policy(cfg: dict, action: str, session: dict | None = None) -> str:
+    """"always", "after_web" or "never" for one action: config "approvals" when it names the action, else "never"."""
     overrides = cfg.get("approvals") or {}
-    default = DEFAULT_APPROVALS.get(action, "always")
-    if (cfg.get("codex") or {}).get("backend") in ("ssh", "wsl"):
-        if action in ("start_session", "create_project", "update_dashboard", "write_brief"):
-            default = "never"
-        elif action == "send_to_session" and (session or {}).get("execution_backend") in ("ssh", "wsl"):
-            default = "never"
+    default = DEFAULT_APPROVALS.get(action, "never")
     v = str(overrides[action] if action in overrides else default).lower()
     return v if v in ("always", "after_web", "never") else "always"
 

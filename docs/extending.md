@@ -35,7 +35,7 @@ streaming). You can configure any number of them and choose a model per bot and 
       "base_url": "https://api.example.com/v1",
       "api_key_env": "OTHER_API_KEY",
       "user_agent": "snaplab/0.1",                    // optional
-      "timeout_s": 600,                               // optional
+      "timeout_s": 0,                                 // optional; 0 (default) = no time limit, Stop ends a request
       "slots": {"count": 4},                          // its own concurrency limit (lock files in data/locks/other)
       "key_expires": "2027-01-31"                     // optional, shown on the dashboard
     }
@@ -259,7 +259,8 @@ An exception inside `run_turn` becomes a failed turn with the error text.
    (the tool's harness list follows the loaded harnesses).
 
 **If your harness runs code:** set `runs_code = True` and `sandboxed = True`, and run every command
-through `snaplab.harnesses.codex.sandbox_run(app, session_id, folder, command, timeout_s, git_dir)`. It uses
+through `snaplab.harnesses.codex.sandbox_run(app, session_id, folder, command, timeout_s, git_dir, cancel)`
+(timeout_s 0 = no time limit; cancel, for example the session's `ctl.cancelled`, ends the run). It uses
 the same per-session mxc permission profile as Codex on the Windows backend: the session folder is the only readable and writable
 place (plus the Python install and the project's `.git`, read only), there is no network, and SnapLab's data
 and the user's home are unreadable. `snaplab/harnesses/tests.py` is a complete example in 50 lines.
@@ -270,14 +271,14 @@ and the user's home are unreadable. `snaplab/harnesses/tests.py` is a complete e
 ## 3. Tools for bots
 
 `message_bot`, `create_group`, `share_project` and `read_brief` are built-in names.
-All bots can use `create_project` and `write_brief`; only the lead can use `assign_project` and `create_bot`.
+Every bot can use every tool, `assign_project`, `create_bot` and `read_memory` included (since 2026-11-21).
 Use `snaplab.access.project_ids(app, bot, manage=False)` or `check_project(..., manage=True)` when extending
-project tools; never truncate a bot's projects to its first entry. Shared projects grant reading only.
+project tools; never truncate a bot's projects to its first entry.
 Bot-message extensions must go through `ChatManager.message_bot` and retain the current origin, so they
 cannot bypass public history, stop handling, conversation budgets or the shared model slots.
 
-`bot_conversations` configures `max_consecutive` (6) and `repeat_window` (20), each a positive integer, and
-`max_hourly` (0, meaning no limit). Counts include silent/error group attempts and outgoing messages. The consecutive budget follows
+`bot_conversations` configures `max_consecutive` and `max_hourly`, both 0 by default, meaning no limit. Counts
+include silent/error group attempts and outgoing messages. The consecutive budget follows
 the original human message across rooms. Hourly limits apply per bot across groups. `rooms.default_responder`
 is retained for old configuration files but no longer restricts participation: all members can choose `[SILENT]`.
 Successful external reads set `ctx.read_web` for this turn and subsequent bot turns in the same origin;
@@ -354,11 +355,12 @@ In `config.json` the same servers can be written by hand, and Streamable HTTP se
   sessions directly and in Codex and Pi through the `snaplab_web` MCP server (SnapLab relays each call, so the
   isolated workspace needs no route to the service); bots are told they can hand big jobs to a session to keep
   the chat light. `"chat": false` keeps a server for SnapCode only (chat bots are then only told it exists).
-- Sessions run unattended, so tools that would show a proposal card are not offered to them at all.
-- Tools run directly; only tools the server marks `destructiveHint` show a proposal card first. `approvals`
-  per tool (or the global `approvals` block, by the SnapLab tool name) overrides that; `exclude` hides tools.
-- Results are untrusted material by default (`"untrusted": false` to change), so later protected actions in
-  the same conversation ask first, as after a web read.
+- Sessions run unattended, so a tool that `approvals` sets to `"always"` (a proposal card) is not offered to them.
+- Tools run directly, also the ones the server marks `destructiveHint` (since 2026-11-21). `approvals` per tool
+  (or the global `approvals` block, by the SnapLab tool name) can ask for a card; `exclude` hides tools.
+- A call waits without a time limit unless `timeout_s` is set; stopping the turn ends the wait.
+- Results are untrusted material by default (`"untrusted": false` to change), so when `approvals` asks for a card
+  "after_web", later actions in the same conversation ask first, as after a web read.
 - `label` is the name people and bots see (`"Notes (shared)"`). `about` replaces the server's own
   instructions in the bots' "Connected services" list: use it to say what this installation uses the server
   for, especially when two entries point at the same kind of server (for example two accounts on one service).

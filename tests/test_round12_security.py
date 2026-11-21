@@ -19,7 +19,12 @@ from snaplab.archive import Archive, Scope
 
 
 class ExportSecurityTest(unittest.TestCase):
-    setUp = test_round12.RemoteTest.setUp
+    def setUp(self):
+        test_round12.RemoteTest.setUp(self)
+        # The provenance checks follow external reads to the cards that config can ask for (no cards by default).
+        from helpers import CARD_APPROVALS
+        self.app.cfg["approvals"] = dict(CARD_APPROVALS)
+
     fake_popen = test_round12.RemoteTest.fake_popen
     run_job = test_round12.RemoteTest.run_job
 

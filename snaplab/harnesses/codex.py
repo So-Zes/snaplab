@@ -29,7 +29,9 @@ import threading
 import time
 from pathlib import Path
 
+from ..config import limit
 from ..mcp_client import session_tools
+from .adapters import NO_TIMEOUT_S
 from .base import Harness, TurnResult, ends_with_question
 
 SECRET_NAME = re.compile(r"(KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL)", re.I)
@@ -118,7 +120,7 @@ bearer_token_env_var = "SNAPLAB_WEB_TOKEN"
 enabled_tools = {json.dumps(["web_search", "read_page"] + sorted(session_tools(app)))}
 required = true
 startup_timeout_sec = 15
-tool_timeout_sec = 780
+tool_timeout_sec = {NO_TIMEOUT_S}
 ''' if sid else "")
     return f"""# Written by SnapLab for one session. Edits here are overwritten.
 # The commands Codex runs use the "{PROFILE}" permission profile on the Windows mxc sandbox:
@@ -324,9 +326,10 @@ PRELUDE = ("[Console]::OutputEncoding = [System.Text.Encoding]::UTF8\n$OutputEnc
            "$env:GIT_CONFIG_GLOBAL = (Join-Path (Get-Location) '.snaplab\\gitconfig')\n$ErrorActionPreference = 'Continue'\n")
 
 
-def sandbox_run(app, sid: str, folder: Path, command: str, timeout_s: float = 180,
-                git_dir: Path | None = None) -> tuple[int | None, str]:
-    """Run a shell command inside the same sandbox as the session (workspace only, no network). Used for tests."""
+def sandbox_run(app, sid: str, folder: Path, command: str, timeout_s: float = 0,
+                git_dir: Path | None = None, cancel=None) -> tuple[int | None, str]:
+    """Run a shell command inside the same sandbox as the session (workspace only, no network). Used for tests.
+    timeout_s 0 (the default) = no time limit; cancel() turning true (the session was stopped) ends it."""
     codex = find_codex()
     if not codex or os.name != "nt":
         return None, "sandbox unavailable (needs Windows and the Codex CLI)"
@@ -344,13 +347,16 @@ def sandbox_run(app, sid: str, folder: Path, command: str, timeout_s: float = 18
                                 stdin=subprocess.DEVNULL, encoding="utf-8", errors="replace", creationflags=0x08000000)
     except OSError:
         return None, "The test process could not be started."
-    try:
-        out, _ = proc.communicate(timeout=timeout_s)
-        return proc.returncode, out or ""
-    except subprocess.TimeoutExpired:
-        kill_tree(proc)
-        out, _ = proc.communicate()
-        return 124, (out or "") + f"\n(stopped after {timeout_s:.0f} s)"
+    most, began = limit(timeout_s), time.monotonic()
+    while True:
+        try:
+            out, _ = proc.communicate(timeout=1)
+            return proc.returncode, out or ""
+        except subprocess.TimeoutExpired:
+            if (cancel and cancel()) or time.monotonic() - began > most:
+                kill_tree(proc)
+                out, _ = proc.communicate()
+                return 124, (out or "") + (f"\n(stopped after {most:.0f} s)" if most != float("inf") else "\n(stopped)")
 
 
 class CodexHarness(Harness):
@@ -461,7 +467,7 @@ class CodexHarness(Harness):
                     del stderr_tail[:-20]
         threading.Thread(target=read_err, daemon=True).start()
 
-        idle_s = max(780, float(self.app.cfg["sessions"].get("idle_timeout_s", 600)))
+        idle_s = limit(self.app.cfg["sessions"].get("idle_timeout_s"))     # 0 (the default) = no limit
         seen = {"t": time.monotonic(), "final": False, "idle_end": False, "done": False}
 
         def watchdog():
@@ -535,7 +541,7 @@ class CodexHarness(Harness):
                 ctl.emit({"kind": "note", "text": "Codex went quiet after its final answer; SnapLab ended the turn."})
                 return TurnResult(ok=True, last_message=last, asks_user=ends_with_question(last),
                                   input_tokens=res.input_tokens, output_tokens=res.output_tokens, calls=res.calls)
-            return TurnResult(ok=False, error=f"Codex stopped responding for {int(idle_s)} s", last_message=last,
+            return TurnResult(ok=False, error="Codex stopped responding" + (f" for {int(idle_s)} s" if idle_s != float("inf") else ""), last_message=last,
                               input_tokens=res.input_tokens, output_tokens=res.output_tokens)
         if ctl.cancelled():
             return TurnResult(ok=False, error="stopped", input_tokens=res.input_tokens, output_tokens=res.output_tokens)
