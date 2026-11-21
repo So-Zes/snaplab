@@ -68,6 +68,12 @@ class ModelsAdminTest(unittest.TestCase):
                 setup.remove_model(self.app, name)
         with self.assertRaises(LookupError):
             setup.remove_model(self.app, "missing")
+        view = {m["name"]: m for m in self.app.models.view()}
+        self.assertTrue(view[self.b]["removable"])
+        self.assertFalse(any(view[n]["removable"] for n in self.first if n in view))
+        reloaded = self.reload()                                       # after a restart, added ones stay removable
+        self.assertIn(self.b, reloaded["models"])
+        self.assertNotIn(self.b, reloaded["config_models"])
 
 
 if __name__ == "__main__":

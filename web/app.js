@@ -3394,7 +3394,7 @@
       const out = [];
       if (models.length > 1 && !uses.includes("chat")) out.push(h("button", { class: "btn ghost small", type: "button",
         onclick: () => run({ action: "default", name: m.name }, t("settings.models.defaulted", { name: m.label })) }, icon("check"), t("settings.models.makedefault")));
-      if (!uses.length) out.push(h("button", { class: "btn ghost small", type: "button", onclick: async () => {
+      if (!uses.length && m.removable !== false) out.push(h("button", { class: "btn ghost small", type: "button", onclick: async () => {
         if (await confirmSheet(t("settings.models.remove.title", { name: m.label }), t("settings.models.remove.body"), t("settings.models.remove"))) run({ action: "remove", name: m.name });
       } }, icon("trash"), t("settings.models.remove")));
       return out.length ? h("div", { class: "model-actions" }, out) : null;

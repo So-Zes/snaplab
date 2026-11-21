@@ -2,6 +2,12 @@
 
 Newest first. Each entry: the date, what changed, and why.
 
+## 2026-11-21 Settings: Remove only for models added there
+
+- Settings > Models offers Remove only for models added in Settings. Models from config.json and the defaults
+  (`config_models`, recorded by config.load) cannot be removed there. Why: adding a model copies the whole list into
+  provider.json, so those models looked removable and came back after a restart.
+
 ## 2026-11-21 Version 1.1.0
 
 - Version 1.1.0: models in Settings (make one the default, remove one), Google Gemini, Claude Code and the Codex

@@ -218,6 +218,7 @@ class ModelRegistry:
                         "base_url": sp["base_url"], "capabilities": sp["capabilities"],
                         "context_limit": sp["context_limit"], "key_set": self.has_key(name) if self.override is None else
                         bool(get_api_key(sp["api_key_env"])), "cli": sp.get("kind") in CLI_KINDS,
-                        "default_for": [k for k, v in self.cfg["routing"].items() if v == name]})
+                        "default_for": [k for k, v in self.cfg["routing"].items() if v == name],
+                        "removable": name not in (self.cfg.get("config_models") or ())})
         out.sort(key=lambda m: 0 if m["default_for"] else 1)
         return out

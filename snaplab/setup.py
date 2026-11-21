@@ -192,7 +192,7 @@ def remove_model(app, name):
         if uses:
             raise ValueError("This model is a default (" + ", ".join(uses) + "). Make another model the default first.")
         added = (app.store.read_json("provider.json", {}) or {}).get("models") or {}
-        if name not in added:
+        if name not in added or name in (app.cfg.get("config_models") or ()):
             raise ValueError("This model comes from config.json. Remove it there.")
         pname = models.pop(name)["provider"]
         providers = copy.deepcopy(app.cfg["providers"])

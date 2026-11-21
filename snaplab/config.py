@@ -150,8 +150,11 @@ def load(path: Path | None = None, overrides: dict | None = None) -> dict:
     cfg["slots"]["dir"] = str(Path(slots_dir).resolve()) if slots_dir else str(data_dir.resolve() / "locks")
     cfg["slots"]["count"] = max(1, int(cfg["slots"].get("count") or 2))
     provider_file = data_dir.resolve() / "provider.json"
+    added: set = set()
     if provider_file.exists():
-        cfg = _merge(cfg, json.loads(provider_file.read_text(encoding="utf-8")))
+        overlay = json.loads(provider_file.read_text(encoding="utf-8"))
+        added = set((overlay.get("models") or {}) if isinstance(overlay, dict) else {}) - set(cfg.get("models") or {})
+        cfg = _merge(cfg, overlay)
     if cfg.get("local_mode"):
         cfg["public_url"] = f"http://127.0.0.1:{cfg['listen_port']}"
         cfg["require_tailscale_user"] = False
@@ -159,4 +162,6 @@ def load(path: Path | None = None, overrides: dict | None = None) -> dict:
         cfg["proxy"]["port"] = 0   # choose a free translator port for this local instance
     from .models import derive
     derive(cfg)
+    # Models from config.json and the defaults (Settings can remove only the ones added there, in provider.json).
+    cfg["config_models"] = sorted(set(cfg.get("models") or {}) - added)
     return cfg
