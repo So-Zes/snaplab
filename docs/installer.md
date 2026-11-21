@@ -24,8 +24,12 @@ administrator"; the first copy waits for it and reads its result from a small st
 else runs as the signed-in user, so files and the WSL distribution belong to that user. A log is kept in
 `~\.snaplab\install.log`.
 
-Removing SnapLab stops its server, unregisters the WSL distribution that setup created (only when
-`setup-result.json` shows SnapLab made it), and removes the app folder, the Start menu entry and the sign-in entry.
+Removing SnapLab stops its server, unregisters the WSL distribution only if this installation's setup created it,
+and removes the app folder, the Start menu entry and the sign-in entry. Setup writes `~\.snaplab\workspace-<name>.txt`
+once: `created` when it made the distribution, `existing` when the distribution was already there (another
+installation, or SnapLab run from a git checkout, uses it), `skipped` with `--skip-wsl`. Only `created` (and a
+`setup-result.json` in its folder) leads to `wsl --unregister`. An installation from 1.1.0 or earlier has no such
+file; then only the default installation ("SnapLab") removes the workspace.
 Data and saved API keys are removed only when the user ticks the box.
 
 ## Options (for testing and support)

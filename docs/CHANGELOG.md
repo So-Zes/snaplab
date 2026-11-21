@@ -2,6 +2,16 @@
 
 Newest first. Each entry: the date, what changed, and why.
 
+## 2026-11-21 Installer: removing an installation removes only the workspace it created
+
+- Setup records in `~\.snaplab\workspace-<name>.txt` whether it created the WSL distribution, found it already
+  there, or skipped it (`--skip-wsl`); removal unregisters the distribution only when this installation created it.
+  Installations from 1.1.0 or earlier have no record, and then only the default installation removes it. Why:
+  removing a second, test installation made with `--name` and `--skip-wsl` unregistered `SnapLab-Worker`, the
+  workspace of the SnapLab already running on that PC, because removal looked only at the default folder's
+  `setup-result.json`. Checked with the built installer: a `--skip-wsl` install and removal left the workspace in
+  place, a named installation without a record left it in place, and a `created` record removed it.
+
 ## 2026-11-21 Settings: Remove only for models added there
 
 - Settings > Models offers Remove only for models added in Settings. Models from config.json and the defaults

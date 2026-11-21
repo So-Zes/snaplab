@@ -236,7 +236,44 @@ namespace SnapLabSetup
                 && Run("wsl.exe", "--version", null, 120000, null, Encoding.Unicode) == 0;
         }
 
+        public static bool WslHasDistro(string name)
+        {
+            var sb = new StringBuilder();
+            if (Run("wsl.exe", "--list --quiet", null, 120000, sb, Encoding.Unicode) != 0) return false;
+            foreach (string line in sb.ToString().Split('\n'))
+                if (string.Equals(line.Replace("\0", "").Trim(), name, StringComparison.OrdinalIgnoreCase)) return true;
+            return false;
+        }
+
         public static string Quote(string s) { return "\"" + s.Replace("\"", "\\\"") + "\""; }
+    }
+
+    // Which Linux workspace an installation owns. Setup writes ~\.snaplab\workspace-<name>.txt once:
+    // "created" when this installation's setup made the WSL distribution, "existing" when the distribution was
+    // already there (another installation or a SnapLab run from a git checkout uses it), "skipped" for --skip-wsl.
+    // Removing an installation unregisters only a distribution it created (2026-11-21: removing a second, test
+    // installation made with --skip-wsl had unregistered the first installation's workspace).
+    static class Workspace
+    {
+        public static string Distro()
+        {
+            string d = Environment.GetEnvironmentVariable("SNAPLAB_WSL_DISTRO");
+            return string.IsNullOrEmpty(d) ? "SnapLab-Worker" : d;
+        }
+
+        public static string Dir(Options o)
+        {
+            string d = Environment.GetEnvironmentVariable("SNAPLAB_WSL_DIR");
+            return string.IsNullOrEmpty(d) ? Path.Combine(o.Home, "wsl") : d;
+        }
+
+        public static string Mark(Options o) { return Path.Combine(o.Home, "workspace-" + o.Name + ".txt"); }
+
+        public static void Record(Options o, string how)
+        {
+            if (File.Exists(Mark(o))) return;     // a reinstall keeps what the first setup found
+            File.WriteAllLines(Mark(o), new[] { how, Distro(), Dir(o) });
+        }
     }
 
     // Messages in English and Japanese; other languages use English.
@@ -404,9 +441,10 @@ namespace SnapLabSetup
                 Shell.Run(o.VenvPython, "-m pip install --disable-pip-version-check numpy onnxruntime tokenizers", o.AppDir, 1800000, null, null);
             Mark("prepare", "done");
 
-            if (o.SkipWsl) { Mark("workspace", "skipped"); WorkspaceProblem = "skipped (--skip-wsl)"; }
+            if (o.SkipWsl) { Workspace.Record(o, "skipped"); Mark("workspace", "skipped"); WorkspaceProblem = "skipped (--skip-wsl)"; }
             else
             {
+                Workspace.Record(o, Shell.WslHasDistro(Workspace.Distro()) ? "existing" : "created");
                 Mark("workspace", "running");
                 var output = new StringBuilder();
                 int code = Shell.Run(o.VenvPython, "-u " + Shell.Quote(Path.Combine(o.AppDir, "tools", "setup_wsl.py")) + " --resume", o.AppDir, 5400000, output, null);
@@ -682,18 +720,25 @@ namespace SnapLabSetup
                     }
                 }
             }
-            // The Linux workspace: only one that SnapLab created (it left setup-result.json).
-            string wslDir = Environment.GetEnvironmentVariable("SNAPLAB_WSL_DIR");
-            if (string.IsNullOrEmpty(wslDir)) wslDir = Path.Combine(o.Home, "wsl");
-            string distro = Environment.GetEnvironmentVariable("SNAPLAB_WSL_DISTRO");
-            if (string.IsNullOrEmpty(distro)) distro = "SnapLab-Worker";
-            if (File.Exists(Path.Combine(wslDir, "setup-result.json")))
+            // The Linux workspace: only one that this installation's setup created (see Workspace). An installation
+            // from 1.1.0 or earlier kept no record; for those, only the default installation owned the workspace.
+            string how = null, distro = null, wslDir = null;
+            string mark = Workspace.Mark(o);
+            if (File.Exists(mark))
+            {
+                string[] lines = File.ReadAllLines(mark);
+                if (lines.Length >= 3) { how = lines[0].Trim(); distro = lines[1].Trim(); wslDir = lines[2].Trim(); }
+            }
+            else if (o.Name == "SnapLab") { how = "created"; distro = Workspace.Distro(); wslDir = Workspace.Dir(o); }
+            if (how == "created" && File.Exists(Path.Combine(wslDir, "setup-result.json")))
             {
                 say(distro);
                 Shell.Run("wsl.exe", "--terminate " + distro, null, 120000, null, Encoding.Unicode);
                 Shell.Run("wsl.exe", "--unregister " + distro, null, 600000, null, Encoding.Unicode);
                 TryDelete(wslDir);
             }
+            else Log.Write("workspace left in place (" + (how ?? "not made by this installation") + ")");
+            try { File.Delete(mark); } catch (Exception) { }
             using (var k = Registry.CurrentUser.CreateSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run")) k.DeleteValue(o.Name, false);
             using (var k = Registry.CurrentUser.CreateSubKey(@"Software\Microsoft\Windows\CurrentVersion\RunOnce")) k.DeleteValue(o.Name + "Setup", false);
             try { File.Delete(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Programs), o.Name + ".lnk")); } catch (Exception) { }
