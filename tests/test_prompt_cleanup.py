@@ -60,7 +60,8 @@ class PromptCleanupTest(unittest.TestCase):
         # No commands for SnapCode in the bot's prompt: its own instructions have them (python vs python3 differed).
         self.assertNotRegex(text, r"python3? \.snaplab/")
         self.assertEqual(text.count("attachments.json"), 1)
-        self.assertEqual(text.count("CAPTCHA"), 2)        # the bot's own stop rule, and that SnapCode stops too
+        self.assertNotIn("CAPTCHA", text)                 # only the payment stop is kept (2026-11-21)
+        self.assertIn("SnapCode stops at a payment", text)
         self.assertIn("clicks by x,y, by selector, by visible text or by number on a marked screenshot", text)
         self.assertEqual(prompts.SNAPCODE_ABILITIES.count("by x,y"), 1)
         self.assertIn("DevTools", text)

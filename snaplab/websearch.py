@@ -11,9 +11,9 @@ With provider "auto" SnapLab tries them in this order and uses the first that an
 DuckDuckGo, Tavily keyless, RustXNG (when it is installed and running). Free sources are often refused on a connection that shares its public address with
 many people (mobile and 5G home routers); a key of the user's own does not depend on that.
 
-If a search site answers with a human check (CAPTCHA / "are you a robot") or says its free limit is used up,
-SnapLab stops using that site for a while (the site's Retry-After, otherwise cooldown_minutes) and tries the next
-one. It never tries to get around the check. What the site wrote in a refusal is not passed to the model.
+A source that answers with a human check (CAPTCHA / "are you a robot") instead of results is skipped for this
+search and the next one is tried; it is asked again next time. A source that says its limit is used up is paused
+for its Retry-After (otherwise cooldown_minutes), because asking before then only fails again.
 
 read_page(): fetches one http(s) page, text only, with size limits. Private, local and tailnet addresses
 are refused, and so are the PC's own addresses (looked up live, public IPv6 included) with their IPv6 /64, and
@@ -295,7 +295,7 @@ def search_duckduckgo(query: str, count: int) -> list[dict]:
                                headers={"Content-Type": "application/x-www-form-urlencoded"})
     text = body.decode("utf-8", "replace")
     if looks_like_captcha(status, text):
-        raise SearchError("captcha", "DuckDuckGo asked for a human check (CAPTCHA). Stopped without trying to get around it.")
+        raise SearchError("captcha", "DuckDuckGo answered with a human check (CAPTCHA) instead of results")
     if status != 200:
         raise SearchError("http", f"DuckDuckGo answered HTTP {status}")
     return parse_duckduckgo(text, count)
@@ -326,9 +326,13 @@ def search_tavily(query: str, count: int, key: str | None) -> list[dict]:
         headers["X-Tavily-Access-Mode"] = "keyless"
     status, hdrs, body, _ = _http("https://api.tavily.com/search", data=payload, headers=headers)
     if status in (429, 432, 433):
-        # The refusal text offers paid workarounds; it is the site's text, so it is not handed to the model.
         what = "the key's limit is used up for now" if key else "its free keyless limit is used up for this connection"
-        raise SearchError("limit", f"Tavily says {what}", _retry_after(hdrs))
+        try:
+            said = str((json.loads(body.decode("utf-8", "replace")).get("error") or {}).get("message") or "")
+        except (ValueError, AttributeError):
+            said = ""
+        raise SearchError("limit", f"Tavily says {what}" + (f' ("{" ".join(said.split())[:300]}")' if said else ""),
+                          _retry_after(hdrs))
     if status in (401, 403) and key:
         raise SearchError("http", f"Tavily refused the API key (HTTP {status})")
     if status != 200:
@@ -452,23 +456,24 @@ class Searcher:
         chain = self.chain()
         if len(chain) == 1 and chain[0][0] in KEY_ENVS and not chain[0][1]:
             raise SearchError("config", f"{chain[0][0]} is selected but its API key is not set (Settings > Web search)")
-        notes, stopped, other = [], False, None
+        notes, stopped, captcha, other = [], False, False, None
         for name, key in chain:
             label = LABELS[name]
             until = self.paused_until.get(name, 0)
             if until > time.time():
                 mins = int((until - time.time()) / 60) + 1
-                why = "asked for a human check" if self.pause_kind.get(name) == "captcha" else "said its limit was used up"
-                notes.append(f"{label} {why} earlier and is paused for about {mins} more minutes")
+                notes.append(f"{label} said its limit was used up and is paused for about {mins} more minutes")
                 stopped = True
                 continue
             try:
                 results = self.run(name, query, count, key)
             except SearchError as e:
-                if e.kind in ("captcha", "limit"):
+                if e.kind == "limit":
                     self.paused_until[name] = time.time() + (e.retry_after or self.cooldown_s)
                     self.pause_kind[name] = e.kind
                     stopped = True
+                elif e.kind == "captcha":
+                    captcha = True
                 else:
                     other = e
                 notes.append(e.message if e.message.startswith(label.split()[0]) else f"{label}: {e.message}")
@@ -481,13 +486,13 @@ class Searcher:
                 out["note"] = NOTES[name]
             return out
         msg = "; ".join(notes) + "."
-        if stopped:
-            msg += f" Web search can be tried again in about {self.paused_minutes(chain)} minutes."
+        if stopped and self.paused_minutes(chain):
+            msg += f" The paused sources can be asked again in about {self.paused_minutes(chain)} minutes."
         if not any(k for n, k in chain if n in KEY_ENVS):
             msg += (" These free sources refuse searches more often on a connection that shares its public address"
                     " with many people. With a Tavily or Brave Search API key (Settings > Web search) search does not"
                     " depend on them.")
-        raise SearchError("captcha" if stopped else (other.kind if other else "network"), msg)
+        raise SearchError("captcha" if captcha else "limit" if stopped else (other.kind if other else "network"), msg)
 
 
 # ------------------------------------------------------------------ reading pages
@@ -614,7 +619,7 @@ def read_page(url: str, *, max_bytes: int = 1_500_000, max_chars: int = 12000, r
     except LookupError:
         text = body.decode("utf-8", "replace")
     if looks_like_captcha(status, text):
-        raise SearchError("captcha", "the page asked for a human check (CAPTCHA). Stopped without trying to get around it.")
+        raise SearchError("captcha", "the page answered with a human check (CAPTCHA) instead of its content")
     if status >= 400:
         raise SearchError("http", f"the page answered HTTP {status}")
     if ctype in ("text/html", "application/xhtml+xml") or (not ctype and "<html" in text[:2000].lower()):

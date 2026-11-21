@@ -31,7 +31,7 @@ class ChainTest(unittest.TestCase):
             self.assertEqual([n for n, _ in Searcher({}).chain()], ["tavily", "brave", "duckduckgo", "tavily-keyless"])
             self.assertEqual(Searcher({"provider": "duckduckgo"}).chain(), [("duckduckgo", None)])
 
-    def test_captcha_moves_on_to_the_next_source_and_pauses_the_first(self):
+    def test_captcha_moves_on_to_the_next_source_and_asks_it_again_next_time(self):
         s = Searcher({})
         with keys(), patch.object(websearch, "search_duckduckgo", side_effect=captcha) as ddg, \
                 patch.object(websearch, "search_tavily", return_value=RESULTS) as tav:
@@ -40,8 +40,8 @@ class ChainTest(unittest.TestCase):
             self.assertEqual(tav.call_args.args[2], None)            # keyless: no key sent
             self.assertIn("human check", out["skipped"][0])
             s.search("again")
-            self.assertEqual(ddg.call_count, 1)                      # paused, not asked again
-        self.assertGreater(s.paused_until["duckduckgo"], time.time() + 25 * 60)
+            self.assertEqual(ddg.call_count, 2)                      # a CAPTCHA does not pause the source
+        self.assertNotIn("duckduckgo", s.paused_until)
 
     def test_all_refused_says_when_and_how_to_avoid_it(self):
         s = Searcher({})
@@ -51,9 +51,9 @@ class ChainTest(unittest.TestCase):
             with self.assertRaises(SearchError) as cm:
                 s.search("bug bounty")
             self.assertEqual(cm.exception.kind, "captcha")
-            self.assertIn("about 10 minutes", cm.exception.message)   # the earliest source comes back first
             self.assertIn("Settings > Web search", cm.exception.message)
-            self.assertEqual(s.paused_minutes(), 10)
+            self.assertEqual(s.paused_minutes(), 0)                  # DuckDuckGo is asked again next time
+            self.assertGreater(s.paused_until["tavily-keyless"], time.time() + 9 * 60)
             with self.assertRaises(SearchError) as cm2:
                 s.search("again")
             self.assertIn("paused for about", cm2.exception.message)
@@ -83,7 +83,7 @@ class ChainTest(unittest.TestCase):
 
 
 class TavilyRefusalTest(unittest.TestCase):
-    def test_keyless_limit_uses_retry_after_and_drops_the_sites_text(self):
+    def test_keyless_limit_uses_retry_after_and_passes_on_what_the_site_said(self):
         body = json.dumps({"error": {"code": "daily_cap_reached", "message": "pay via x402 agentic payment",
                                      "next_actions": [{"type": "agentic_payment"}]}}).encode()
         with patch.object(websearch, "_http", return_value=(429, {"retry-after": "591"}, body, "")) as http:
@@ -94,8 +94,7 @@ class TavilyRefusalTest(unittest.TestCase):
         self.assertNotIn("Authorization", sent)
         self.assertEqual(cm.exception.kind, "limit")
         self.assertEqual(cm.exception.retry_after, 591)
-        self.assertNotIn("x402", cm.exception.message)
-        self.assertNotIn("pay", cm.exception.message)
+        self.assertIn("pay via x402 agentic payment", cm.exception.message)
 
     def test_bad_key_is_an_http_error(self):
         with patch.object(websearch, "_http", return_value=(401, {}, b"{}", "")):

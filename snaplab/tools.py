@@ -299,7 +299,7 @@ class Toolbox:
                                  "A new session has no conversation: use from_session to start it from another session's files (an independent review or grading, a second opinion, an alternative attempt). "
                                  "Omit harness normally: SnapLab picks Pi for code, features, documents and web apps, and Codex for desktop operation (task_type desktop). Set task_type to describe the work; name a harness only when you want a specific one. "
                                  "A session can operate a browser and desktop apps with screenshots, mouse and keyboard; ask for screenshot attachments when the result is visual. "
-                                 "Logins and passwords given in the task may be entered; payment, identity verification and CAPTCHA stop the work and are reported. "
+                                 "Logins and passwords given in the task may be entered; a payment stops the work and is reported. "
                                  "Use harness 'bot' for notes and research without a workspace. Say it started only after you have its session_id. "
                                  "The chat receives a result card; to look in on it before that, set schedule_wakeup and use get_session. Configured approvals apply.",
                 "send_to_session": "Continue a session that is not running; it keeps its files and its own task history. Use it to finish or fix that session's work, also on your own when its result card shows the outcome is not complete yet. "
@@ -520,7 +520,7 @@ class Toolbox:
         try:
             out = self.app.searcher.search(query, count)
         except SearchError as e:
-            if e.kind == "captcha":
+            if e.kind in ("captcha", "limit"):
                 self.app.act("search", "act.search_stopped", reason=e.message[:160])
             raise
         self.mark_web_read("web_search")

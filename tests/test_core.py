@@ -565,7 +565,7 @@ class SearchParsingTest(unittest.TestCase):
         self.assertTrue(res[0]["snippet"])
         self.assertEqual(len(res), 2)   # the ad is skipped
 
-    def test_captcha_detection_and_pause(self):
+    def test_captcha_detection_and_no_pause(self):
         self.assertTrue(websearch.looks_like_captcha(202, '<div class="anomaly-modal">bots use DuckDuckGo too</div>'))
         self.assertTrue(websearch.looks_like_captcha(403, "<title>Just a moment...</title>"))
         self.assertFalse(websearch.looks_like_captcha(200, "<title>Docs</title><div class='g-recaptcha'></div>"))
@@ -584,7 +584,7 @@ class SearchParsingTest(unittest.TestCase):
                 self.assertEqual(cm.exception.kind, "captcha")
         finally:
             websearch.search_duckduckgo = orig
-        self.assertEqual(len(calls), 1)    # paused after the first human check: no second request
+        self.assertEqual(len(calls), 2)    # a human check only means no answer this time; asked again (2026-11-21)
 
     def test_read_page_refuses_private_addresses(self):
         for url in ("file:///etc/passwd", "http://127.0.0.1:18445/api", "http://localhost/", "http://100.100.100.100/",

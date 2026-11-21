@@ -209,7 +209,7 @@ chat for a slot (lowest priority, at most `slots.background_max` at a time).
 
 `App.status()` reports the real state of what the phone depends on, without calling the model: the phone's
 own connection (SSE), the model (key present, and the result of the last real call: ok, busy, unreachable,
-wrong key, ...), the shared slots (in use, waiting), the Codex translator, web search (paused after a CAPTCHA)
+wrong key, ...), the shared slots (in use, waiting), the Codex translator, web search (paused when every source is paused after saying its limit is used up)
 and running sessions. A watcher thread checks every 3 seconds and publishes `status.updated` when anything
 changes. The phone shows a coloured dot in the header (green, amber, red) and, when something is down, a band
 under the header; tapping either opens the full list.
@@ -347,7 +347,7 @@ Stop, completion or failure. The generated Codex config adds this required MCP s
 command networking remains disabled.
 
 The bridge reuses `Toolbox` and the existing `Searcher`/page reader, including address, redirect,
-peer, CAPTCHA and size checks. Known secrets in arguments are rejected before dispatch; returned web
+peer and size checks (a CAPTCHA page is reported as no answer). Known secrets in arguments are rejected before dispatch; returned web
 material stays wrapped as untrusted. Tool calls/results and full bounded page text are archived with
 the session/project scope. Page snapshots use session-specific keys. Codex is instructed on every turn
 to maintain `.snaplab/KNOWLEDGE.md` with sources, dates and uncertainty. After secret removal, SnapLab

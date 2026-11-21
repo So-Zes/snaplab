@@ -2,6 +2,31 @@
 
 Newest first. Each entry: the date, what changed, and why.
 
+## 2026-11-21 Version 1.1.2
+
+- Version 1.1.2: RustXNG is installed on the first start and asks its full set of sources by default, so bots can
+  search (also in Japanese) on connections where the free sources refuse automated searches; SnapCode and bots
+  stop only at a payment (CAPTCHA and identity checks no longer stop them). Running the installer again updates an
+  existing install.
+
+## 2026-11-21 Only the payment stop is kept; RustXNG full by default and installed at start
+
+- Bots' house rules, SnapCode's instructions, the `start_session` description and `desktop.py` now stop only at a
+  payment (card entry). The CAPTCHA and identity-check stops had been added by Claude on its own and were never
+  decided by the owner; they are removed. `desktop.py` blocks input only on card fields (card number, security
+  code, PIN).
+- `websearch`: a CAPTCHA page from a source counts as no answer and the next source is asked; the source is not
+  paused (it is asked again next time). A source that says its limit is used up is still paused for its
+  Retry-After. Tavily's refusal text is passed on to the bot.
+- RustXNG: the profile is chosen in Settings > Web search (full, standard, clean), full by default. Full also asks
+  Naver, Yahoo, Yahoo Japan, Keenable, Fynd and other sites whose terms may forbid automated access; RustXNG prints
+  a notice to read their terms. A running RustXNG with another profile is started again (its profile is judged
+  from its engines). When RustXNG is missing, SnapLab installs it on start (`RustXNG.ensure_in_background`;
+  `search.rustxng.enabled = false` turns it off).
+- Why: with the standard profile, Japanese questions found only Wikipedia; with full, three Japanese questions
+  (bug bounty programs, cinema showtimes in Tokyo, Immunefi) were answered in about 2 s with showtime pages and
+  articles. And a fresh install had no working search at all until someone pressed the install button.
+
 ## 2026-11-21 Version 1.1.1
 
 - Version 1.1.1: web search tries its sources in order and takes a Tavily or Brave Search key in Settings, RustXNG

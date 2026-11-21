@@ -230,6 +230,14 @@ def search_key(app, body):
             raise ValueError("RustXNG is not available in this SnapLab.")
         rx.install_in_background()
         return {"search": app.searcher.view()}
+    if action == "rustxng_profile":              # full / standard / clean; RustXNG starts again with it
+        rx = getattr(app.searcher, "rustxng", None)
+        if rx is None:
+            raise ValueError("RustXNG is not available in this SnapLab.")
+        profile = str(body.get("profile") or "")
+        rx.set_profile(profile)
+        app.store.update_settings(rustxng_profile=profile)
+        return {"search": app.searcher.view()}
     provider = str(body.get("provider") or "")
     if provider not in KEY_ENVS:
         raise ValueError("Choose Tavily or Brave Search.")

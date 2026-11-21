@@ -102,12 +102,14 @@ class DesktopInputTest(unittest.TestCase):
         with patch.dict('os.environ', {'SNAPLAB_SCREEN': '99999x1'}):
             self.assertEqual(desktop.screen_size(), (1024, 768))
 
-    def test_password_screens_do_not_stop_input_but_captcha_does(self):
+    def test_password_and_captcha_screens_do_not_stop_input_but_card_entry_does(self):
         with tempfile.TemporaryDirectory() as tmp, patch.object(desktop, 'STATE', Path(tmp)), \
              patch.object(desktop, 'screenshot'), patch.object(desktop, 'digest', return_value='a'):
             with patch.object(desktop, 'run', return_value=b'Developer login Password Enter'):
                 desktop.guard_input()
-            with patch.object(desktop, 'run', return_value=b"I'm not a robot reCAPTCHA"):
+            with patch.object(desktop, 'run', return_value=b"I'm not a robot reCAPTCHA Verify your identity"):
+                desktop.guard_input()
+            with patch.object(desktop, 'run', return_value=b"Credit card number Security code"):
                 with self.assertRaises(ValueError):
                     desktop.guard_input()
             self.assertTrue((Path(tmp) / 'blocked').exists())
@@ -195,7 +197,8 @@ class OperationListTest(unittest.TestCase):
                        '1280x800', 'view_image', 'read (Pi)', 'python3 .snaplab/desktop.py', 'node .snaplab/browser.mjs'):
             self.assertIn(needed, text)
         self.assertIn('type the credentials', text)
-        self.assertIn('CAPTCHA', text)
+        self.assertNotIn('CAPTCHA', text)             # only the payment stop is kept (2026-11-21)
+        self.assertIn('payment', text)
         self.assertNotIn('If login, password', text)
         headless = remote.instructions(False)
         self.assertNotIn('desktop.py', headless)

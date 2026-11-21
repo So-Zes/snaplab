@@ -72,6 +72,18 @@ for (const lang of ["en", "ja", "ru"]) {
   card = ui.searchCard();
   assert.equal(card.querySelector(".rustxng-box"), null);
   assert.match(card.querySelectorAll(".kv")[1].textContent, /公開の索引/);
+  // installed: the profile can be switched (full is the default)
+  ui.S.search = { ...base, rustxng: { state: "ready", supported: true, installed: true, profile: "full", profiles: ["full", "standard", "clean"] } };
+  card = ui.searchCard();
+  const seg = card.querySelector(".seg");
+  assert.ok(seg, "profile switch shown");
+  const buttons = seg.querySelectorAll("button");
+  assert.equal(buttons.length, 3);
+  assert.equal(buttons[0].className, "on");
+  context.reply = (path) => path === "/api/search" ? { ok: true, search: { ...base, rustxng: { state: "starting", supported: true, installed: true, profile: "standard" } } } : {};
+  requests.length = 0;
+  await buttons[1].emit("click");
+  assert.deepEqual(JSON.parse(requests.find((r) => r.path === "/api/search").options.body), { action: "rustxng_profile", profile: "standard" });
   // unsupported platform or turned off: nothing about RustXNG
   ui.S.search = { ...base, rustxng: { state: "absent", supported: false } };
   assert.equal(ui.searchCard().querySelector(".rustxng-box"), null);

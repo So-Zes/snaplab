@@ -100,6 +100,8 @@ class App:
         if searcher is None:                       # RustXNG starts with the other background work (server.py)
             from .rustxng import RustXNG
             self.searcher.rustxng = RustXNG((cfg.get("search") or {}).get("rustxng") or {})
+            if self.store.settings().get("rustxng_profile"):  # chosen in Settings > Web search
+                self.searcher.rustxng.profile = self.store.settings()["rustxng_profile"]
         self._page_reader = page_reader
         self.push = Push(self.store, (cfg.get("push") or {}).get("subject") or "mailto:snaplab@example.com",
                          sender=push_sender, guard=self.guard)

@@ -34,11 +34,9 @@ def screen_size():
 
 
 SIZE = screen_size()
-# Card details, identity checks and human checks (CAPTCHA) stop input. Logins and passwords do not:
-# the agent may type credentials that its task or workspace gives it.
-SENSITIVE = re.compile(r'captcha|verify.{0,12}(human|identity)|not a robot|'
-                       r'credit\s*card|card\s*number|security\s*code|本人確認|'
-                       r'カード番号|暗証番号|人間である|ロボットではありません', re.I)
+# Card details (a payment) stop input; the user decided to keep only this stop (2026-11-21). Logins and passwords
+# do not: the agent may type credentials that its task or workspace gives it.
+SENSITIVE = re.compile(r'credit\s*card|card\s*number|security\s*code|カード番号|暗証番号', re.I)
 INPUT = {'click', 'click-text', 'double-click', 'triple-click', 'right-click', 'middle-click', 'drag',
          'mouse-down', 'mouse-up', 'scroll', 'type', 'key', 'key-down', 'key-up', 'hold'}
 BUTTONS = {'1': '1', '2': '2', '3': '3', 'left': '1', 'middle': '2', 'right': '3'}
@@ -102,8 +100,7 @@ def wait_for_user():
 def guard_input():
     wait_for_user()
     if (STATE / 'blocked').exists():
-        raise ValueError('Input stopped: card details, identity verification or a human check (CAPTCHA) needs the user. '
-                         'Report it; do not bypass.')
+        raise ValueError('Input stopped: card details (a payment) need the user. Report it; do not bypass.')
     # Always check the current screen before sending input; reuse the last reading of an unchanged screen.
     im = screenshot()
     words = None
@@ -117,8 +114,7 @@ def guard_input():
         words = ocr(im)
     if SENSITIVE.search(words):
         (STATE / 'blocked').touch()
-        raise ValueError('Input stopped: card details, identity verification or a human check (CAPTCHA) detected. '
-                         'Report it; do not bypass.')
+        raise ValueError('Input stopped: card details (a payment) detected. Report it; do not bypass.')
 
 
 def inside(output, suffix='.png'):

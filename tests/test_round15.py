@@ -53,16 +53,19 @@ class DesktopTest(unittest.TestCase):
 
     def test_sensitive_screen_blocks_before_typing_and_remains_blocked(self):
         with tempfile.TemporaryDirectory() as folder, patch.object(desktop,'STATE',Path(folder)), \
-             patch.object(desktop,'screenshot',return_value=Mock()), patch.object(desktop,'digest',return_value='x'),              patch.object(desktop,'run',return_value=b'Verify you are human') as run:
+             patch.object(desktop,'screenshot',return_value=Mock()), patch.object(desktop,'digest',return_value='x'),              patch.object(desktop,'run',return_value=b'Enter your credit card number') as run:
             with self.assertRaises(ValueError): desktop.guard_input()
             self.assertTrue((Path(folder)/'blocked').exists())
             run.reset_mock()
             with self.assertRaises(ValueError): desktop.guard_input()
             run.assert_not_called()
 
-    def test_sensitive_languages_and_captcha(self):
-        for text in ['CAPTCHA','Verify you are human',"I'm not a robot",'Credit card number','本人確認','カード番号']:
+    def test_sensitive_languages_payment_only(self):
+        for text in ['Credit card number','Security code','カード番号','暗証番号']:
             self.assertIsNotNone(desktop.SENSITIVE.search(text),text)
+        # Only the payment stop is kept (2026-11-21): CAPTCHA and identity checks do not stop input.
+        for text in ['CAPTCHA','Verify you are human',"I'm not a robot",'本人確認']:
+            self.assertIsNone(desktop.SENSITIVE.search(text),text)
         # Logins and passwords given by the task are typed; they no longer stop input.
         for text in ['Enter the digits and press the named button','Password','Log in','Sign in','ログイン','パスワード']:
             self.assertIsNone(desktop.SENSITIVE.search(text),text)

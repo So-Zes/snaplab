@@ -8,7 +8,7 @@ double-click, right-click, drag, scroll, hover, type, press and hold keys, use s
 type in its Console. The same Chrome is also reachable through the DevTools protocol, so the worker can read the
 console, network requests, the DOM, the accessibility tree, localStorage and JavaScript values as text. Screenshots
 of the whole screen, of the page, and enlarged parts of the screen go to the model as images. Logins and passwords
-given by the task are typed. Card details, identity verification and CAPTCHA still stop the work. The private
+given by the task are typed. Card details (a payment) still stop the work. The private
 screen is never the user's own Windows desktop.
 
 ## What the worker reads
@@ -54,14 +54,12 @@ logged during the current command are marked `[new]`. `network` lists the reques
 and time (Resource Timing), plus requests seen during the command. Each run also reports new console errors, page
 errors and failed requests.
 
-## Logins, passwords, cards and CAPTCHA
+## Logins, passwords and payments
 
 The worker types credentials that the task, the user or workspace files give it, such as a game's developer
-password, and it does not guess others. It stops without input and reports when card details or identity
-verification are needed, or when a CAPTCHA or another human check appears; it never tries to solve or bypass a
-CAPTCHA. `desktop.py` reads the screen with OCR before each input and blocks input for the rest of the turn when it
-recognizes a CAPTCHA, a human check, card fields or identity verification. Login and password screens do not
-block it. The check reuses the last reading while the screen is unchanged. It is a best-effort guard, not a
+password, and it does not guess others. It stops without input and reports when a payment (card details) is
+needed. `desktop.py` reads the screen with OCR before each input and blocks input for the rest of the turn when it
+recognizes card fields. Login and password screens, CAPTCHAs and identity checks do not block it. The check reuses the last reading while the screen is unchanged. It is a best-effort guard, not a
 security boundary; filesystem, process and display separation are the boundaries.
 
 ## Seeing the screen

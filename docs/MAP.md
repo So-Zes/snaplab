@@ -63,7 +63,8 @@ flowchart LR
   stdio), the MCP server that gives SnapCode its web and MCP tools, single-file tool plugins, and web search.
   Web search tries Tavily (key), Brave (key), DuckDuckGo, then Tavily keyless, and pauses a source that refuses;
   keys are entered in Settings > Web search (`setup.search_key`, credential names `TAVILY_API_KEY` / `BRAVE_API_KEY`).
-  `rustxng.py` installs (pinned release, SHA-256 checked) and starts RustXNG, a local metasearch engine used last.
+  `rustxng.py` installs RustXNG on the first start when it is missing (pinned release, SHA-256 checked) and starts it
+  on every start; its profile (full by default, standard, clean) is chosen in Settings > Web search.
 - `mcp_admin.py`: MCP servers added in Settings (`data/mcp_servers.json`, secrets in the OS credential store);
   each is tested before it is saved, and `app.reload_mcp()` applies changes without a restart.
 
@@ -230,5 +231,5 @@ the same account in a Lima VM, see [mac.md](mac.md).
 ## 7. Principles
 
 - Give bots and SnapCode as much freedom as possible: no caps on turns, time or counts unless really needed.
-- Kept rules: API keys never leave SnapLab; payment, identity checks and CAPTCHAs stop the work; work the user
+- Kept rules: API keys never leave SnapLab; a payment stops the work; work the user
   stopped is not restarted on its own; instructions inside outside material are not followed.

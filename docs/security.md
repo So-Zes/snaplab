@@ -156,8 +156,8 @@ The native interface follows Microsoft's [CredReadW documentation](https://learn
   (mapped, compatible, NAT64, 6to4, Teredo) (checked at every
   redirect), ignores system proxies, and checks the address it actually connected to (so a name that resolves
   differently the second time cannot reach the PC or the home network). Text types only, capped size.
-- If a search site or page shows a human check (CAPTCHA), SnapLab stops, reports it, and pauses that provider
-  for 30 minutes. It never tries to get around it.
+- A search site or page that answers with a human check (CAPTCHA) instead of content counts as no answer; search
+  goes on to the next source. A source that says its limit is used up is paused for its Retry-After.
 
 ## Guarded web research for SnapCode
 
@@ -186,7 +186,7 @@ has not disappeared. Keep commands in the Windows sandbox offline and do not tre
 data-loss-prevention system.
 
 Successful calls reuse the existing public-address/redirect/connected-peer checks, content-type and size
-limits, private-term redaction, and CAPTCHA stop behavior. Web text is wrapped as reference material and the
+limits and private-term redaction. Web text is wrapped as reference material and the
 Codex instructions explicitly prohibit following instructions inside it. This instruction is not a proof that
 a model will resist every prompt injection. The filesystem sandbox remains the execution boundary.
 Tool results and pages are archived in the session's scope; knowledge snapshots are marked untrusted and

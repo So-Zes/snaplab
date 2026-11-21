@@ -1517,5 +1517,5 @@ button.ubar:focus-visible { outline: 2px solid var(--chart); outline-offset: 1px
 .search-key { display: flex; gap: 8px; flex-wrap: wrap; }
 .search-key select { flex: 0 0 auto; width: auto; }
 .search-key input { flex: 1 1 180px; min-width: 0; }
-.rustxng-box { display: grid; gap: 8px; }
+.rustxng-box, .rustxng-profile { display: grid; gap: 8px; }
 .rustxng-box .bad-text { color: var(--bad, #c0392b); }

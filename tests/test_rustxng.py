@@ -114,10 +114,43 @@ class InstallTest(unittest.TestCase):
 
     def test_one_that_already_answers_is_used_without_starting_another(self):
         rx = RustXNG({})
-        with patch.object(rustxng, "healthy", return_value=True), patch.object(rustxng.subprocess, "Popen") as popen:
+        with patch.object(rustxng, "healthy", return_value=True), patch.object(rustxng, "running_profile", return_value="full"), \
+                patch.object(rustxng.subprocess, "Popen") as popen:
             self.assertTrue(rx.start())
         popen.assert_not_called()
         self.assertTrue(rx.usable())
+        self.assertEqual(rx.profile, "full")                      # the default profile
+
+    def test_one_running_with_another_profile_is_started_again(self):
+        rx = RustXNG({"profile": "full"})
+        with self.asset("0" * 64):
+            exe = rustxng.exe_path()
+        exe.parent.mkdir(parents=True, exist_ok=True)
+        exe.write_bytes(b"x")
+        answers = iter([True, False, True])
+        with self.asset("0" * 64), patch.object(rustxng, "healthy", side_effect=lambda *a, **k: next(answers, True)), \
+                patch.object(rustxng, "running_profile", return_value="standard"), \
+                patch.object(rustxng, "stop_on_port") as stop, patch.object(rustxng.subprocess, "Popen") as popen:
+            self.assertTrue(rx.start())
+        stop.assert_called_once_with("29483")
+        self.assertIn("full", popen.call_args.args[0])
+
+    def test_profile_from_settings_and_unknown_profiles_refused(self):
+        rx = RustXNG({})
+        with patch.object(RustXNG, "start_in_background") as again:
+            rx.set_profile("standard")
+        self.assertEqual(rx.profile, "standard")
+        self.assertEqual(rx.view()["profiles"], ["full", "standard", "clean"])
+        with self.assertRaises(ValueError):
+            rx.set_profile("anything")
+
+    def test_running_profile_is_read_from_the_engines(self):
+        def config(names):
+            return FakeResponse(json.dumps({"engines": [{"name": n, "enabled": True} for n in names]}).encode())
+        for names, want in ((["mwmbl", "wikipedia", "naver", "keenable"], "full"), (["mwmbl", "wikipedia"], "standard"),
+                            (["wikipedia"], "clean")):
+            with patch("urllib.request.OpenerDirector.open", return_value=config(names)):
+                self.assertEqual(rustxng.running_profile("http://127.0.0.1:29483"), want)
 
     def test_not_installed_stays_absent_and_never_downloads(self):
         rx = RustXNG({})
@@ -125,6 +158,23 @@ class InstallTest(unittest.TestCase):
                 patch.object(rustxng.urllib.request, "urlopen", side_effect=AssertionError("no download")):
             self.assertFalse(rx.start())
         self.assertEqual(rx.state, "absent")
+
+    def test_snaplab_start_installs_when_missing_and_starts_when_present(self):
+        rx = RustXNG({})
+        with self.asset("0" * 64), patch.object(RustXNG, "install_in_background") as install, \
+                patch.object(RustXNG, "start_in_background") as start:
+            rx.ensure_in_background()
+            install.assert_called_once()
+            start.assert_not_called()
+            exe = rustxng.exe_path()
+            exe.parent.mkdir(parents=True, exist_ok=True)
+            exe.write_bytes(b"x")
+            rx.ensure_in_background()
+            start.assert_called_once()
+        off = RustXNG({"enabled": False})
+        with self.asset("0" * 64), patch.object(RustXNG, "install_in_background") as install:
+            off.ensure_in_background()
+        install.assert_not_called()
 
     def test_turned_off_in_config(self):
         rx = RustXNG({"enabled": False})

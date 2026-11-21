@@ -3430,6 +3430,16 @@
     // RustXNG: a metasearch engine on this PC that asks only open indexes; installed and started from here.
     const rx = sv.rustxng;
     let rxBox = null;
+    let rxProfile = null;
+    if (rx && rx.installed && rx.state !== "off") {
+      const cur = rx.profile || "full";
+      rxProfile = h("div", { class: "rustxng-profile" },
+        h("div", { class: "seg three" }, (rx.profiles || ["full", "standard", "clean"]).map((p) => h("button", {
+          type: "button", class: cur === p ? "on" : "", "aria-pressed": String(cur === p), onclick: async () => {
+            try { const j = await api("/api/search", { action: "rustxng_profile", profile: p }); S.search = j.search; render(); watchRustxng(); } catch (e) { fail(e); }
+          } }, t("settings.search.rustxng.p." + p)))),
+        h("p", { class: "hint" }, t("settings.search.rustxng.d." + cur)));
+    }
     if (rx && rx.supported && rx.state !== "ready" && rx.state !== "off") {
       const busy = rx.state === "installing" || rx.state === "starting";
       rxBox = h("div", { class: "rustxng-box" },
@@ -3443,6 +3453,7 @@
     return h("div", { class: "card form search-card" }, h("h3", { class: "card-h" }, icon("search"), t("settings.search")),
       h("div", { class: "search-order" }, rows),
       rxBox,
+      rxProfile,
       h("p", { class: "hint" }, h("span", {}, t(hasKey ? "settings.search.haskey" : "settings.search.nokey"), " ",
         h("a", { href: "https://app.tavily.com", target: "_blank", rel: "noopener" }, "app.tavily.com"))),
       h("div", { class: "search-key" }, sel, key), save,
