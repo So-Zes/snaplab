@@ -527,6 +527,8 @@ class Toolbox:
         lines = [f"Search results from {out['provider']} for: {out['query']}"]
         if out.get("skipped"):
             lines.append("(skipped: " + "; ".join(out["skipped"]) + ")")
+        if out.get("note"):
+            lines.append("(" + out["note"] + ")")
         for i, r in enumerate(out["results"], 1):
             lines.append(f"{i}. {r['title']}\n   {r['url']}\n   {r['snippet']}")
         if not out["results"]:

@@ -6,8 +6,9 @@ Search providers
 - "tavily": Tavily API, used when TAVILY_API_KEY is set.
 - "tavily-keyless": Tavily's own keyless access (header X-Tavily-Access-Mode: keyless), free and rate-limited
   per connection.
+- "rustxng": a RustXNG (or SearXNG) on this PC, see rustxng.py: open indexes only, no key, no limit.
 With provider "auto" SnapLab tries them in this order and uses the first that answers: Tavily (key), Brave (key),
-DuckDuckGo, Tavily keyless. Free sources are often refused on a connection that shares its public address with
+DuckDuckGo, Tavily keyless, RustXNG (when it is installed and running). Free sources are often refused on a connection that shares its public address with
 many people (mobile and 5G home routers); a key of the user's own does not depend on that.
 
 If a search site answers with a human check (CAPTCHA / "are you a robot") or says its free limit is used up,
@@ -337,8 +338,41 @@ def search_tavily(query: str, count: int, key: str | None) -> list[dict]:
              "snippet": (r.get("content") or "")[:400]} for r in (data.get("results") or [])[:count]]
 
 
-LABELS = {"tavily": "Tavily", "brave": "Brave Search", "duckduckgo": "DuckDuckGo", "tavily-keyless": "Tavily (no key)"}
+LABELS = {"tavily": "Tavily", "brave": "Brave Search", "duckduckgo": "DuckDuckGo", "tavily-keyless": "Tavily (no key)",
+          "rustxng": "RustXNG"}
+NOTES = {"rustxng": "RustXNG searches open indexes (Mwmbl, Wikipedia and others); it finds few current or Japanese pages"}
 KEY_ENVS = {"tavily": "TAVILY_API_KEY", "brave": "BRAVE_API_KEY"}
+
+
+_local_opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), _NoRedirect)
+
+
+def search_rustxng(query: str, count: int, url: str) -> list[dict]:
+    """The JSON API of RustXNG / SearXNG on a URL the user configured (normally 127.0.0.1)."""
+    u = url.rstrip("/") + "/search?" + urllib.parse.urlencode({"q": query, "format": "json", "max_results": count})
+    req = urllib.request.Request(u, headers={"User-Agent": UA, "Accept": "application/json"})
+    try:
+        with _local_opener.open(req, timeout=30) as resp:
+            status, body = resp.status, resp.read(3_000_000)
+    except urllib.error.HTTPError as e:
+        status, body = e.code, b""
+    except (urllib.error.URLError, TimeoutError, OSError) as e:
+        raise SearchError("network", f"RustXNG did not answer: {getattr(e, 'reason', e)}") from None
+    if status == 429:
+        raise SearchError("limit", "RustXNG says it is busy", 60)
+    if status != 200:
+        raise SearchError("http", f"RustXNG answered HTTP {status}")
+    data = json.loads(body.decode("utf-8", "replace"))
+    out = []
+    for r in data.get("results") or []:
+        link = str(r.get("url") or "")
+        if not link.startswith(("http://", "https://")):
+            continue
+        out.append({"title": " ".join(str(r.get("title") or "").split())[:200], "url": link[:500],
+                    "snippet": " ".join(str(r.get("content") or "").split())[:400]})
+        if len(out) >= count:
+            break
+    return out
 
 
 class Searcher:
@@ -349,6 +383,7 @@ class Searcher:
         self.paused_until: dict[str, float] = {}
         self.pause_kind: dict[str, str] = {}
         self.last: dict = {}
+        self.rustxng = None            # a rustxng.RustXNG, set by the app
 
     def chain(self) -> list[tuple[str, str | None]]:
         """The providers to try, in order, with their keys."""
@@ -358,14 +393,20 @@ class Searcher:
             return [("tavily", tav)]
         if self.provider == "brave":
             return [("brave", brave)]
+        rx = self.rustxng
         if self.provider in ("duckduckgo", "tavily-keyless"):
             return [(self.provider, None)]
+        if self.provider == "rustxng":
+            return [("rustxng", rx.url if rx else None)]
         out = []
         if tav:
             out.append(("tavily", tav))
         if brave:
             out.append(("brave", brave))
-        return out + [("duckduckgo", None), ("tavily-keyless", None)]
+        out += [("duckduckgo", None), ("tavily-keyless", None)]
+        if rx is not None and rx.usable():
+            out.append(("rustxng", rx.url))
+        return out
 
     def pick(self) -> tuple[str, str | None]:
         return self.chain()[0]
@@ -385,7 +426,8 @@ class Searcher:
             return int((until - now) / 60) + 1 if until > now else 0
         return {"mode": self.provider, "keys": {p: any(n == p and k for n, k in chain) for p in KEY_ENVS},
                 "order": [{"name": n, "label": LABELS[n], "paused_minutes": mins(n)} for n, _ in chain],
-                "paused_minutes": self.paused_minutes(chain), "last": self.last}
+                "paused_minutes": self.paused_minutes(chain), "last": self.last,
+                "rustxng": self.rustxng.view() if self.rustxng is not None else None}
 
     def run(self, name: str, query: str, count: int, key: str | None) -> list[dict]:
         if name == "tavily":
@@ -394,6 +436,10 @@ class Searcher:
             return search_tavily(query, count, None)
         if name == "brave":
             return search_brave(query, count, key)
+        if name == "rustxng":
+            if not key:
+                raise SearchError("config", "RustXNG is selected but not installed (Settings > Web search)")
+            return search_rustxng(query, count, key)
         return search_duckduckgo(query, count)
 
     def search(self, query: str, count: int = 5) -> dict:
@@ -431,11 +477,13 @@ class Searcher:
             out = {"provider": name, "query": query, "results": results}
             if notes:
                 out["skipped"] = notes
+            if name in NOTES:
+                out["note"] = NOTES[name]
             return out
         msg = "; ".join(notes) + "."
         if stopped:
             msg += f" Web search can be tried again in about {self.paused_minutes(chain)} minutes."
-        if not any(k for _, k in chain):
+        if not any(k for n, k in chain if n in KEY_ENVS):
             msg += (" These free sources refuse searches more often on a connection that shares its public address"
                     " with many people. With a Tavily or Brave Search API key (Settings > Web search) search does not"
                     " depend on them.")

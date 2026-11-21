@@ -54,7 +54,7 @@ DEFAULTS: dict = {
     },
     "qwen_log": {"enabled": True},
     "proxy": {"port": 18432},
-    "search": {"provider": "auto", "cooldown_minutes": 30},
+    "search": {"provider": "auto", "cooldown_minutes": 30, "rustxng": {"enabled": True}},
     "push": {"subject": "mailto:snaplab@example.com"},
     # Caps that end long work are 0 = no limit (see limit()): tool steps per bot turn, model calls and minutes per
     # SnapCode turn, continuations a bot makes on its own. Hang guards (idle, single request, tests) keep values.

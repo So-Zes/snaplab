@@ -97,6 +97,9 @@ class App:
         self.models = ModelRegistry(cfg, self.slots, self.redactor, self.usage, override=llm)
         self.guard.extra_env = sorted(set(self.guard.extra_env) | set(self.models.key_envs()) | {"BRAVE_API_KEY", "TAVILY_API_KEY"})
         self.searcher = searcher or Searcher(cfg.get("search") or {}, self.redactor)
+        if searcher is None:                       # RustXNG starts with the other background work (server.py)
+            from .rustxng import RustXNG
+            self.searcher.rustxng = RustXNG((cfg.get("search") or {}).get("rustxng") or {})
         self._page_reader = page_reader
         self.push = Push(self.store, (cfg.get("push") or {}).get("subject") or "mailto:snaplab@example.com",
                          sender=push_sender, guard=self.guard)
@@ -1158,6 +1161,14 @@ class App:
             cache[s.get("id")] = (key, dict(out))
         return out
 
+    def search_view(self) -> dict | None:
+        """Settings > Web search. A failure here must not keep the app from opening."""
+        try:
+            return self.searcher.view() if hasattr(self.searcher, "view") else None
+        except Exception as e:  # noqa: BLE001
+            self.log(f"search view failed: {type(e).__name__}: {e}")
+            return None
+
     def bootstrap(self, device: dict | None = None) -> dict:
         st = self.store
         rooms = st.rooms()
@@ -1173,7 +1184,7 @@ class App:
             "harnesses": self.sessions.harness_info(), "dashboard": st.dashboard(), "usage": self.usage_view(),
             "activity": st.recent_activity(25), "tasks": [self.tasks.view(t) for t in self.tasks.all()], "status": self.status(), "background": self.background_view(), "tones": list(prompts.TONES) + ["custom"], "palette": PALETTE,
             "models": self.models.view(), "routing": self.cfg["routing"],
-            "search": self.searcher.view() if hasattr(self.searcher, "view") else None,
+            "search": self.search_view(),
             "tool_labels": {n: p.label for n, p in self.plugin_tools.items() if p.label},
             "push": {"public_key": self.push.public_key_b64(), "devices": len(self.push.subscriptions())},
             "device": {"id": (device or {}).get("id"), "label": (device or {}).get("label")},

@@ -3384,6 +3384,24 @@
     return m ? (m.kind === "snapscribe" ? m.label : m.model + " · " + (m.provider_label || m.provider)) : (ref || "");
   }
 
+  // While RustXNG is being downloaded or started, ask the PC every 2 s and show the result.
+  let rustxngTimer = null;
+  function watchRustxng() {
+    if (rustxngTimer) return;
+    const tick = async () => {
+      rustxngTimer = null;
+      try {
+        const j = await api("/api/search", { action: "view" });
+        S.search = j.search;
+        const st = (j.search.rustxng || {}).state;
+        if (st === "installing" || st === "starting") { rustxngTimer = setTimeout(tick, 2000); return; }
+        if (location.hash.startsWith("#/settings")) render();
+        if (st === "ready") toast(t("settings.search.rustxng.ready"));
+      } catch (e) { /* the next visit to Settings shows the state */ }
+    };
+    rustxngTimer = setTimeout(tick, 2000);
+  }
+
   // Settings > Web search: which sources bots use now, and a Tavily or Brave Search key of the user's own.
   function searchCard() {
     const sv = S.search;
@@ -3391,7 +3409,7 @@
     const order = sv.order || [];
     const using = order.find((o) => !o.paused_minutes);
     const name = (p) => (p === "tavily" ? "Tavily" : "Brave Search");
-    const label = (o) => (o.name === "tavily-keyless" ? t("settings.search.keyless") : o.label);
+    const label = (o) => (o.name === "tavily-keyless" ? t("settings.search.keyless") : o.name === "rustxng" ? t("settings.search.rustxng") : o.label);
     const rows = order.map((o) => h("div", { class: "kv" }, h("span", {}, label(o)),
       h("span", { class: "tag " + (o.paused_minutes ? "bad" : o === using ? "good" : "") },
         o.paused_minutes ? t("settings.search.paused", { n: o.paused_minutes }) : t(o === using ? "settings.search.using" : "settings.search.next"))));
@@ -3409,8 +3427,22 @@
       try { const j = await api("/api/search", { action: "remove", provider: p }); S.search = j.search; render(); } catch (e) { fail(e); }
     } }, icon("trash"), t("settings.search.remove", { name: name(p) })));
     const hasKey = (sv.keys || {}).tavily || (sv.keys || {}).brave;
+    // RustXNG: a metasearch engine on this PC that asks only open indexes; installed and started from here.
+    const rx = sv.rustxng;
+    let rxBox = null;
+    if (rx && rx.supported && rx.state !== "ready" && rx.state !== "off") {
+      const busy = rx.state === "installing" || rx.state === "starting";
+      rxBox = h("div", { class: "rustxng-box" },
+        h("p", { class: "hint" }, t("settings.search.rustxng.about")),
+        rx.state === "error" ? h("p", { class: "hint bad-text" }, t("settings.search.rustxng.error", { why: rx.error || "" })) : null,
+        h("button", { class: "btn ghost", type: "button", disabled: busy, onclick: async () => {
+          try { const j = await api("/api/search", { action: "rustxng" }); S.search = j.search; render(); watchRustxng(); } catch (e) { fail(e); }
+        } }, icon(busy ? "clock" : "search"), t(busy ? "settings.search.rustxng.busy" : rx.installed ? "settings.search.rustxng.start" : "settings.search.rustxng.install")));
+      if (busy) watchRustxng();
+    }
     return h("div", { class: "card form search-card" }, h("h3", { class: "card-h" }, icon("search"), t("settings.search")),
       h("div", { class: "search-order" }, rows),
+      rxBox,
       h("p", { class: "hint" }, h("span", {}, t(hasKey ? "settings.search.haskey" : "settings.search.nokey"), " ",
         h("a", { href: "https://app.tavily.com", target: "_blank", rel: "noopener" }, "app.tavily.com"))),
       h("div", { class: "search-key" }, sel, key), save,

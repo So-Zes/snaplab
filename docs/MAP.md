@@ -63,6 +63,7 @@ flowchart LR
   stdio), the MCP server that gives SnapCode its web and MCP tools, single-file tool plugins, and web search.
   Web search tries Tavily (key), Brave (key), DuckDuckGo, then Tavily keyless, and pauses a source that refuses;
   keys are entered in Settings > Web search (`setup.search_key`, credential names `TAVILY_API_KEY` / `BRAVE_API_KEY`).
+  `rustxng.py` installs (pinned release, SHA-256 checked) and starts RustXNG, a local metasearch engine used last.
 - `mcp_admin.py`: MCP servers added in Settings (`data/mcp_servers.json`, secrets in the OS credential store);
   each is tested before it is saved, and `app.reload_mcp()` applies changes without a restart.
 

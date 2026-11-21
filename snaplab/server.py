@@ -994,6 +994,8 @@ def serve_forever(app, host: str, port: int) -> None:
     app.sessions.watch_plans()
 
     def background():
+        if getattr(app.searcher, "rustxng", None) is not None:
+            app.searcher.rustxng.start_in_background()
         app.housekeeper.start()
         app.tasks.start()
     from . import deploy

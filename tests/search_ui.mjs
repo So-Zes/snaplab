@@ -51,4 +51,29 @@ for (const lang of ["en", "ja", "ru"]) {
   assert.match(card.querySelectorAll(".kv")[0].textContent, /Tavily/);
   assert.match(card.querySelectorAll(".tag")[0].className, /good/);
 }
+// RustXNG not installed: the box explains it and its button asks the PC to install it
+{
+  const { context, ui, document, requests } = makeUI();
+  for (const file of ["en", "ja", "ru", "core"]) vm.runInContext(fs.readFileSync(new URL(`../web/i18n/${file}.js`, import.meta.url), "utf8"), context);
+  ui.S.lang = "ja";
+  const root = document.createElement("div"); root.setAttribute("id", "app"); document.body.appendChild(root);
+  const toasts = document.createElement("div"); toasts.setAttribute("id", "toasts"); document.body.appendChild(toasts);
+  const base = { mode: "auto", keys: { tavily: false, brave: false }, paused_minutes: 0, order: [{ name: "duckduckgo", label: "DuckDuckGo", paused_minutes: 0 }] };
+  ui.S.search = { ...base, rustxng: { state: "absent", supported: true, installed: false, error: "", version: "v0.32.0" } };
+  let card = ui.searchCard();
+  const box = card.querySelector(".rustxng-box");
+  assert.ok(box, "box shown");
+  context.reply = (path) => path === "/api/search" ? { ok: true, search: { ...base, rustxng: { state: "installing", supported: true, installed: false } } } : {};
+  await box.querySelector("button").emit("click");
+  const sent = requests.find((r) => r.path === "/api/search");
+  assert.deepEqual(JSON.parse(sent.options.body), { action: "rustxng" });
+  // ready: no box, and the source is listed under its own name
+  ui.S.search = { ...base, order: [...base.order, { name: "rustxng", label: "RustXNG", paused_minutes: 0 }], rustxng: { state: "ready", supported: true, installed: true } };
+  card = ui.searchCard();
+  assert.equal(card.querySelector(".rustxng-box"), null);
+  assert.match(card.querySelectorAll(".kv")[1].textContent, /公開の索引/);
+  // unsupported platform or turned off: nothing about RustXNG
+  ui.S.search = { ...base, rustxng: { state: "absent", supported: false } };
+  assert.equal(ui.searchCard().querySelector(".rustxng-box"), null);
+}
 console.log("search_ui: ok");

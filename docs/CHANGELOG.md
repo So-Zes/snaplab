@@ -2,6 +2,23 @@
 
 Newest first. Each entry: the date, what changed, and why.
 
+## 2026-11-21 Web search: RustXNG as the last source
+
+- `rustxng.py`: RustXNG (github.com/RustXNG/RustXNG, a Rust rewrite of SearXNG, AGPL-3.0) can be installed from
+  Settings > Web search. The official v0.32.0 release for this platform is downloaded from GitHub and checked against
+  the SHA-256 written in `rustxng.py` (a mismatch is deleted), kept in `~/.snaplab/rustxng/v0.32.0/`, and started on
+  127.0.0.1:29483 with its `standard` profile, which asks only providers that allow automated use (Mwmbl, Wikipedia,
+  Wikidata, wiby; GitHub, Stack Overflow, arXiv and others for their topics). SnapLab starts it again on every start
+  (after the deploy check) or uses one that already answers. Nothing is downloaded without the button.
+- `websearch`: `rustxng` is the last source of `auto` while it runs; the bot is told that it searched open indexes
+  with small coverage of current and Japanese pages. `search.provider` `rustxng` uses only it.
+- `App.search_view`: a failure while building the search state no longer breaks `/api/bootstrap`.
+
+Why: with DuckDuckGo and Tavily keyless both refusing on a shared address, bots had no search at all. RustXNG never
+refuses and needs no key; its index is small, so it comes after the others. Checked on a real PC: the button
+downloaded the release, the SHA-256 matched, RustXNG started and answered, and a search that DuckDuckGo and Tavily
+refused was answered by RustXNG.
+
 ## 2026-11-21 Web search: sources tried in order, a search key in Settings
 
 - With `search.provider` `auto`, `websearch.Searcher` tries Tavily (key), Brave Search (key), DuckDuckGo and then

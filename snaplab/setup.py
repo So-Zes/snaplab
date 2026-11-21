@@ -221,10 +221,19 @@ def search_key(app, body):
     """Settings > Web search: test a Tavily or Brave Search key with one search, then keep it in this computer's
     credential store under TAVILY_API_KEY / BRAVE_API_KEY, the names websearch reads. "remove" deletes it again."""
     from .websearch import KEY_ENVS, SearchError, search_brave, search_tavily
+    action = str(body.get("action") or "save")
+    if action == "view":
+        return {"search": app.searcher.view()}
+    if action == "rustxng":                      # download the pinned release, check it, start it (rustxng.py)
+        rx = getattr(app.searcher, "rustxng", None)
+        if rx is None:
+            raise ValueError("RustXNG is not available in this SnapLab.")
+        rx.install_in_background()
+        return {"search": app.searcher.view()}
     provider = str(body.get("provider") or "")
     if provider not in KEY_ENVS:
         raise ValueError("Choose Tavily or Brave Search.")
-    if str(body.get("action") or "save") == "remove":
+    if action == "remove":
         credentials.delete_credential(KEY_ENVS[provider])
         return {"search": app.searcher.view()}
     key = str(body.get("key") or "").strip()
