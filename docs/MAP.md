@@ -113,9 +113,9 @@ flowchart LR
   one-time wake-ups (`schedule_wakeup`). A run missed while the PC was off is done once when SnapLab is back,
   however late.
 - `get_session(events=N)` and `list_sessions(status="active")` let a bot look at progress when it wants to.
-- Experiment (2026-11-22, off by default): `decision_watch.py`. When switched on in Settings > Experiments, every 2
-  minutes it looks at running SnapCode sessions and bot replies being written. Work without progress for 10 minutes
-  is described to a decision model (OpenRouter's `liquid/d1.2-ultra`, key `OPENROUTER_API_KEY`) with one yes/no
+- Experiment (2026-11-22, on by default since 1.1.6): `decision_watch.py`. While on (Settings > Experiments) and
+  `OPENROUTER_API_KEY` is set, every 2 minutes it looks at running SnapCode sessions and bot replies being written.
+  Work without progress for 10 minutes is described to a decision model (OpenRouter's `liquid/d1.2-ultra`, key `OPENROUTER_API_KEY`) with one yes/no
   question; at 0.6 or more a bot is woken (the session's bot, or the lead bot for a stuck reply, or the owner's
   phone when the lead itself is stuck). Nothing is stopped. Values are in config `decision_watch`; decisions are
   logged to `data/decision-watch.jsonl`.

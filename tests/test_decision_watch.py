@@ -42,16 +42,29 @@ class WatchTest(unittest.TestCase):
                                            "ts": iso(quiet_s)})
         return sid
 
-    def test_off_by_default_and_switched_in_settings(self):
+    def test_on_by_default_and_switched_in_settings(self):
+        self.assertTrue(self.watch.enabled())
+        self.assertTrue(self.watch.view()["enabled"])
+        self.watch.set_enabled(False)
         self.assertFalse(self.watch.enabled())
-        self.assertFalse(self.watch.view()["enabled"])
+        self.assertFalse(self.app.store.settings()["decision_watch"])
         with patch.object(DecisionWatch, "start") as start:
             v = self.watch.set_enabled(True)
         start.assert_called_once()
         self.assertTrue(v["enabled"])
         self.assertTrue(self.app.store.settings()["decision_watch"])
-        self.watch.set_enabled(False)
-        self.assertFalse(self.watch.enabled())
+
+    def test_without_the_key_nothing_is_described_or_sent(self):
+        self.session(quiet_s=1500)
+        w = DecisionWatch(self.app)
+        with patch("snaplab.llm.get_api_key", return_value=None), \
+                patch("snaplab.provider_protocol.open_request") as opened:
+            self.assertEqual(w.check(), [])
+            self.assertFalse(w.view()["key_set"])
+        opened.assert_not_called()
+        self.assertEqual(w.stats["checks"], 0)
+        self.assertEqual(w.stats["last_error"], "")
+        self.assertEqual(self.app.store.read_jsonl(self.app.store.path("decision-watch.jsonl")), [])
 
     def test_a_quiet_session_is_asked_about_and_its_bot_woken(self):
         sid = self.session(quiet_s=1500)

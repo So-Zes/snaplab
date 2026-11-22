@@ -142,7 +142,7 @@ class App:
         self.attachments = Attachments(self)
         from .tasks import Scheduler
         self.tasks = Scheduler(self)
-        from .decision_watch import DecisionWatch          # experimental; off unless switched on
+        from .decision_watch import DecisionWatch          # experimental; on by default, switched in Settings
         self.decision_watch = DecisionWatch(self)
         from .ledger import StateLedger
         from .facts import MemoryFacts

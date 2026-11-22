@@ -2,6 +2,15 @@
 
 Newest first. Each entry: the date, what changed, and why.
 
+## 2026-11-22 Version 1.1.6: the decision watch is on by default
+
+- `decision_watch.enabled` is now `True` in config and in `decision_watch.DEFAULTS`, so the watch runs without
+  being switched on. The switch in Settings > Experiments still turns it off (the setting wins over config), and an
+  install that already switched it off stays off.
+- Without `OPENROUTER_API_KEY` the watch does nothing: no work is described, nothing is sent, and no rows are added
+  to `data/decision-watch.jsonl`. Settings shows that the key is missing.
+- Why: the owner asked for the watch to be on in SnapLab and in the owner's own copy right away (2026-11-22).
+
 ## 2026-11-22 Version 1.1.5
 
 - Version 1.1.5: an experimental decision watch (off by default) that wakes a bot when work shows no progress.

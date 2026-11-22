@@ -62,8 +62,9 @@ DEFAULTS: dict = {
     "qwen_log": {"enabled": True},
     "proxy": {"port": 18432},
     "search": {"provider": "auto", "cooldown_minutes": 30, "rustxng": {"enabled": True}},
-    # Experimental: a decision model watches quiet work and wakes a bot (decision_watch.py; off by default).
-    "decision_watch": {"enabled": False},
+    # Experimental: a decision model watches quiet work and wakes a bot (decision_watch.py; on by default since
+    # 1.1.6, idle until OPENROUTER_API_KEY is set; the switch is in Settings > Experiments).
+    "decision_watch": {"enabled": True},
     "push": {"subject": "mailto:snaplab@example.com"},
     # Caps that end long work are 0 = no limit (see limit()): tool steps and reply tokens per bot turn, model calls
     # and minutes per SnapCode turn, a test run, a quiet Codex, continuations a bot makes on its own.

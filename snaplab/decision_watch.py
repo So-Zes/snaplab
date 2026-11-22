@@ -12,7 +12,8 @@ now? When the answer's probability reaches `wake_at`, a bot is woken like a wake
 Nothing is stopped or cut; the woken bot decides (wait, look with get_session, message, stop or start again).
 The same work is not described again within `rewake_s` seconds of a wake-up.
 
-On and off: Settings > Advanced > Experiments, or decision_watch.enabled in config.json (the setting wins).
+On and off: Settings > Advanced > Experiments, or decision_watch.enabled in config.json (the setting wins). On by
+default since 1.1.6; without the key nothing is checked or sent.
 Separate by design: the whole feature is this module, one start() in server.background(), one view in the
 bootstrap, one settings route and one switch in the app. Turning it off stops the next check and any call that is
 still waiting.
@@ -30,7 +31,7 @@ import time
 import urllib.error
 import urllib.request
 
-DEFAULTS = {"enabled": False, "every_s": 120, "quiet_s": 600, "wake_at": 0.6, "rewake_s": 1800,
+DEFAULTS = {"enabled": True, "every_s": 120, "quiet_s": 600, "wake_at": 0.6, "rewake_s": 1800,
             "model": "liquid/d1.2-ultra", "url": "https://openrouter.ai/api/alpha/decisions",
             "key_env": "OPENROUTER_API_KEY"}
 QUESTION = {"stuck": {"type": "noul", "instructions": (
@@ -79,10 +80,13 @@ class DecisionWatch:
             self.start()
         return self.view()
 
-    def view(self) -> dict:
+    def key_set(self) -> bool:
         from .llm import get_api_key
+        return bool(get_api_key(self.cfg["key_env"]))
+
+    def view(self) -> dict:
         return {"enabled": self.enabled(), "model": self.cfg["model"], "key_env": self.cfg["key_env"],
-                "key_set": bool(get_api_key(self.cfg["key_env"])), "quiet_minutes": round(float(self.cfg["quiet_s"]) / 60, 1),
+                "key_set": self.key_set(), "quiet_minutes": round(float(self.cfg["quiet_s"]) / 60, 1),
                 "wake_at": self.cfg["wake_at"], **self.stats}
 
     def start(self) -> None:
@@ -147,6 +151,8 @@ class DecisionWatch:
     # ------------------------------------------------------------------ one check
     def check(self, now: float | None = None) -> list[dict]:
         now = time.time() if now is None else now
+        if self._decide == self.call_model and not self.key_set():
+            return []                                # on by default: without the key nothing is described or sent
         self.stats["checks"] += 1
         self.stats["last_check"] = dt.datetime.fromtimestamp(now).astimezone().isoformat(timespec="seconds")
         done = []
