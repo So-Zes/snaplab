@@ -25,8 +25,8 @@ using Microsoft.Win32;
 [assembly: AssemblyTitle("SnapLab Setup")]
 [assembly: AssemblyProduct("SnapLab")]
 [assembly: AssemblyCompany("So-Zes")]
-[assembly: AssemblyVersion("1.1.6.0")]
-[assembly: AssemblyFileVersion("1.1.6.0")]
+[assembly: AssemblyVersion("1.1.7.0")]
+[assembly: AssemblyFileVersion("1.1.7.0")]
 
 namespace SnapLabSetup
 {

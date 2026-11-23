@@ -357,6 +357,7 @@
         S.questions = S.questions.filter((q) => q.id !== ev.question.id || ev.question.status === "open");
         $$('[data-q="' + ev.question.id + '"]').forEach((el) => el.replaceWith(questionCard(ev.question)));
         refreshList();
+        needsOldCount();
         break;
       }
       case "dashboard.updated": S.dashboard = ev.dashboard; if (r.name === "dashboard") render(); break;
@@ -596,7 +597,20 @@
     const pill = $("#needs-pill");
     if (pill) { const n = needsCount(); pill.classList.toggle("show", n > 0); $(".needs-n", pill).textContent = String(n); }
   }
-  function needsSheet() {
+  // Close waiting cards without answering (2026-11-23). The bots are not told; an approval's action is not run.
+  async function dismissQuestions(ids) {
+    const j = await api("/api/questions/dismiss", { ids });
+    const gone = new Set((j.questions || []).map((q) => q.id).concat(ids));
+    S.questions = S.questions.filter((q) => !gone.has(q.id));
+    (j.questions || []).forEach((q) => $$('[data-q="' + q.id + '"]').forEach((el) => el.replaceWith(questionCard(q))));
+    updateTabBadges();
+    needsOldCount();
+    if (["chats", "home", "dashboard"].includes(S.route.name)) render();
+    return j.questions || [];
+  }
+  const DAY_MS = 24 * 3600 * 1000;
+  let needsOldCount = () => {};
+  function needsSheet(focus) {
     const body = h("div", { class: "needs-body" });
     const paint = () => {
       body.innerHTML = "";
@@ -605,20 +619,43 @@
       if (!qs.length && !ss.length) { body.appendChild(h("div", { class: "needs-empty" }, h("img", { src: "/brand/sail-blue.png", alt: "" }), h("p", {}, t("needs.empty")))); return; }
       if (qs.length) {
         body.appendChild(h("h3", { class: "section" }, t("needs.cards")));
+        const old = () => S.questions.filter((q) => Date.now() - Date.parse(q.created || "") > DAY_MS);
+        if (old().length) {
+          const label = h("span", {});
+          const all = h("button", { class: "btn ghost small needs-dismiss-old", type: "button", onclick: async () => {
+            const ids = old().map((q) => q.id);
+            if (!ids.length) return;
+            if (!(await confirmSheet(t("needs.dismissOld", { n: ids.length }), h("p", {}, t("needs.dismissOld.d", { n: ids.length })), t("q.dismiss")))) return;
+            all.disabled = true;
+            try { await dismissQuestions(ids); } catch (e) { fail(e); } finally { all.disabled = false; }
+          } }, icon("x"), label);
+          // the count follows cards closed one by one while the list is open
+          needsOldCount = () => { const n = old().length; label.textContent = t("needs.dismissOld", { n }); all.hidden = !n; };
+          needsOldCount();
+          body.appendChild(all);
+        }
         qs.forEach((q) => {
           const b = bot(q.bot);
-          body.appendChild(h("div", { class: "needs-q" }, h("a", { class: "needs-from", href: "#/room/" + q.room, onclick: () => sh.close() }, avatar(b, "xs"), h("span", {}, b ? b.name : ""), icon("right")), questionCard(q)));
+          body.appendChild(h("div", { class: "needs-q", "data-needs": q.id }, h("a", { class: "needs-from", href: "#/room/" + q.room, onclick: () => sh.close() }, avatar(b, "xs"), h("span", {}, b ? b.name : ""),
+            q.created ? h("span", { class: "needs-when" }, relTime(q.created)) : null, icon("right")), questionCard(q)));
         });
       }
       if (ss.length) { body.appendChild(h("h3", { class: "section" }, t("needs.sessions"))); body.appendChild(h("div", { class: "sess-list" }, ss.map((s) => { const r = sessionRow(s); r.addEventListener("click", () => sh.close()); return r; }))); }
     };
     paint();
     const sh = sheet(t("needs.title"), body);
+    const target = focus && $('[data-needs="' + focus + '"]', body);
+    if (target && target.scrollIntoView) setTimeout(() => target.scrollIntoView({ block: "center" }), 60);
   }
 
+  // A screen drawn again with new data (the same route) keeps still: its entrance animations play only when it opens.
+  let lastScreen = "";
   function screen(opts, body, extra) {
     const app = $("#app");
-    app.className = "screen-" + (opts.cls || S.route.name);
+    const key = S.route.name + ":" + (S.route.id || "");
+    const again = key === lastScreen;
+    lastScreen = key;
+    app.className = "screen-" + (opts.cls || S.route.name) + (again ? " again" : "");
     app.innerHTML = "";
     const main = h("main", { class: "content" + (opts.flush ? " flush" : "") }, body);
     app.appendChild(header(opts));
@@ -923,8 +960,15 @@
       else if (typing.value) send({ t: "text", text: typing.value });
       typing.value = "";
     });
+    // Ctrl+V (Cmd+V, Shift+Insert or the menu's Paste) pastes this PC's clipboard into the page as typed text.
+    typing.addEventListener("paste", (e) => {
+      const text = e.clipboardData && e.clipboardData.getData("text/plain");
+      e.preventDefault();
+      if (text) send({ t: "text", text });
+    });
     typing.addEventListener("keydown", (e) => {
       if (e.isComposing || e.keyCode === 229 || composing) return;
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && (e.key === "v" || e.key === "V")) return;   // the paste event sends it
       const vk = BP_KEYS[e.key];
       const combo = (e.ctrlKey || e.metaKey) && e.key.length === 1;
       if (!vk && !combo) return;                 // ordinary characters arrive as input
@@ -1188,7 +1232,7 @@
     const qs = S.questions;
     if (qs.length) {
       const q = qs[0];
-      body.appendChild(h("a", { class: "q-banner", href: "#/room/" + q.room }, icon("help"),
+      body.appendChild(h("a", { class: "q-banner", href: "#/room/" + q.room, onclick: (e) => { e.preventDefault(); needsSheet(); } }, icon("help"),
         h("div", {}, h("b", {}, t(qs.length === 1 ? "chats.questions" : "chats.questions.n", { n: qs.length })), h("span", {}, q.question)), icon("right")));
     }
     const rooms = S.rooms.slice().sort((a, b) => String(b.last_ts || "").localeCompare(String(a.last_ts || "")));
@@ -1648,6 +1692,10 @@
     if (p && p.why) card.appendChild(h("p", { class: "qcard-why" }, icon(["web", "web_conversation"].includes(p.why) ? "globe" : "stop"), h("span", {}, t("prop.why." + p.why, p.why_vars || {}))));
     if (q.detail && (!p || q.detail.length > 220 || !(p.fields || []).some(([, v]) => v === q.detail))) card.appendChild(h("details", { class: "qcard-detail" }, h("summary", {}, t("q.detail")), h("pre", {}, q.detail)));
     const shown = (a) => approval ? (/^approve/i.test(a || "") || a === t("q.approve") ? t("q.approved") : /^decline/i.test(a || "") || a === t("q.decline") ? t("q.declined") : a) : a;
+    if (q.status === "dismissed" || q.status === "cancelled") {
+      card.appendChild(h("div", { class: "qcard-a closed" }, icon("x"), h("span", {}, t(q.status === "dismissed" ? "q.dismissed" : "q.cancelled"))));
+      return card;
+    }
     if (answered) { card.appendChild(h("div", { class: "qcard-a" }, icon(approval ? (/^approve/i.test(q.answer || "") || q.answer === t("q.approve") ? "check" : "x") : "check"), h("span", {}, t("q.answered")), h("b", {}, shown(q.answer || "")))); return card; }
     const send = async (text, btn) => {
       if (!text.trim()) return;
@@ -1669,6 +1717,11 @@
       inp.addEventListener("keydown", (e) => { if (e.key === "Enter") send(inp.value); });
       card.appendChild(h("div", { class: "qcard-free" }, inp, go_));
     }
+    const close = h("button", { class: "btn ghost small qcard-dismiss", type: "button", onclick: async () => {
+      $$("button", card).forEach((x) => (x.disabled = true));
+      try { await dismissQuestions([q.id]); } catch (e) { fail(e); $$("button", card).forEach((x) => (x.disabled = false)); }
+    } }, t("q.dismiss"));
+    card.appendChild(close);
     return card;
   }
 
@@ -2544,7 +2597,7 @@
     const rows = [];
     qs.slice(0, 3).forEach((q) => {
       const b = bot(q.bot);
-      rows.push(h("a", { class: "needs-row q", href: "#/room/" + q.room }, h("span", { class: "needs-ic " + (q.kind === "approval" ? "info" : "warn") }, icon(q.kind === "approval" ? "shield" : "help")),
+      rows.push(h("a", { class: "needs-row q", href: "#/room/" + q.room, onclick: (e) => { e.preventDefault(); needsSheet(q.id); } }, h("span", { class: "needs-ic " + (q.kind === "approval" ? "info" : "warn") }, icon(q.kind === "approval" ? "shield" : "help")),
         h("div", { class: "needs-main" }, h("b", {}, q.kind === "approval" ? t("q.approval") : (b ? b.name : t("q.title"))), h("span", {}, q.question)), icon("right")));
     });
     ss.slice(0, 4).forEach((s) => rows.push(h("a", { class: "needs-row", href: "#/session/" + s.id }, statusPill(s.status),
@@ -2648,7 +2701,7 @@
   // Days, weeks or months as columns (input tokens, output tokens, calls or errors); tap a column to see that
   // period by model, by use, by bot, by room or SnapCode and by hour. Older days have fewer details recorded.
 
-  const U = { unit: "day", metric: "input_tokens", offset: 0, sel: null, history: null, details: {}, timer: null };
+  const U = { unit: "day", metric: "input_tokens", offset: 0, sel: null, history: null, details: {}, timer: null, all: new Set() };
   const UNITS = { day: 14, week: 12, month: 12 };
   const ymd = (d) => d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
   const dayOf = (s) => { const [y, m, d] = String(s).split("-").map(Number); return new Date(y, m - 1, d); };
@@ -2755,8 +2808,9 @@
         h("span", { class: "ubreak-track" + (r.callsOnly && m.endsWith("tokens") ? " calls" : ""), "aria-hidden": "true" }, h("span", { style: { width: (r.callsOnly && m.endsWith("tokens")
           ? Math.max(2, Math.round((r.calls / callsMax) * 100)) : (r[m] ? Math.max(2, Math.round((r[m] / max) * 100)) : 0)) + "%" } })),
         h("span", { class: "ubreak-sub" }, r.sub ? r.sub + " · " : "", r.callsOnly ? "" : line(r)))));
-      draw(false);
-      const more = rows.length > 6 ? h("button", { class: "btn ghost small", type: "button", onclick: () => { draw(true); more.remove(); } }, t("usage.showAll", { n: rows.length })) : null;
+      const open = U.all.has(title);
+      draw(open);
+      const more = rows.length > 6 && !open ? h("button", { class: "btn ghost small", type: "button", onclick: () => { U.all.add(title); draw(true); more.remove(); } }, t("usage.showAll", { n: rows.length })) : null;
       const note = [opts.note, onlyCalls ? t("usage.callsOnly") : null].filter(Boolean).join(" ");
       return h("section", { class: "card usage-break" }, h("h3", { class: "card-h" }, icon(opts.icon || "coins"), title), note ? h("p", { class: "hint" }, note) : null, list, more);
     };

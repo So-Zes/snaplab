@@ -682,7 +682,7 @@ class ChatManager:
     @staticmethod
     def question_view(q: dict) -> dict:
         return {k: q.get(k) for k in ("id", "kind", "question", "options", "status", "answer", "bot", "room", "detail",
-                                      "prop", "created", "answered_at")}
+                                      "prop", "created", "answered_at", "dismissed_at")}
 
     def create_question(self, room: dict, bot: dict, *, question: str, options: list | None = None,
                         kind: str = "question", action: dict | None = None, detail: str = "",
@@ -756,6 +756,26 @@ class ChatManager:
             raise ValueError("empty answer")
         with self.answer_lock:
             return self._answer(qid, text, carry_from)
+
+    def dismiss(self, qids: list[str]) -> list[dict]:
+        """The user closes waiting cards without answering them (2026-11-23), so old questions stop waiting. The bot
+        is not told, and an approval's action is not run. Cards that are no longer open are left as they are."""
+        out = []
+        with self.answer_lock:
+            for qid in dict.fromkeys(qids):
+                with self.store.lock:
+                    q = self.store.question(qid)
+                    if not q or q.get("status") != "open":
+                        continue
+                    q.update(status="dismissed", dismissed_at=now_iso())
+                    if q.get("authorization"):
+                        q["authorization"]["state"] = "cancelled"
+                    self.store.save_question(q)
+                self.app.bus.publish("question.updated", {"question": self.question_view(q)})
+                self._settle_chip(q, "Decline")
+                self.store.event("card.dismiss", actor="user", where=q.get("room") or "", data={"card": q["id"], "kind": q.get("kind")})
+                out.append(q)
+        return out
 
     def _answer(self, qid: str, text: str, carry_from: str | None = None) -> dict:
         with self.store.lock:                     # a card is answered exactly once, even if two answers race

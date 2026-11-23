@@ -39,7 +39,8 @@ flowchart LR
 
 ### Bots and chat
 - `chat.py`: who answers and in what order, streaming replies, question cards. In groups, `@Name` answers first and
-  every member may choose `[SILENT]`.
+  every member may choose `[SILENT]`. Cards can be closed without an answer (`chat.dismiss`, `POST /api/questions/dismiss`;
+  the bot is not told).
 - `uploads.py`: photos and files the user sends to a chat: upload checks, what the model receives,
   `read_attachment`, and copies into a SnapCode workspace (`from_chat/`).
 - Memory lane 1 (`context.auto_recall`): before each reply the latest message is looked up in the archive, and at

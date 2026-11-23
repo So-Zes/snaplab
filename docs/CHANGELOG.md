@@ -2,6 +2,27 @@
 
 Newest first. Each entry: the date, what changed, and why.
 
+## 2026-11-23 Version 1.1.7: paste into the browser, no flashing on redraw, waiting questions open and close
+
+- In-app browser (`renderBrowser`): Ctrl+V (also Cmd+V, Shift+Insert and the menu's Paste) puts this PC's clipboard
+  text into the page as typed text. Before, the Ctrl+V key itself went to the workspace browser, which pasted its own
+  empty clipboard.
+- Flashing: `screen()` adds `.again` to `#app` when the same screen is drawn again with new data, and the entrance
+  animations of `.page`, `.widget` and the like (from transparent to shown) do not play. Before, the API usage page
+  redrew every few seconds and the dashboard on every work update, and each time the whole screen faded in again.
+  "Show all" on the usage page now stays open across redraws (`U.all`).
+- Waiting questions:
+  - "n questions waiting for your answer" in the chat list, and the question rows of "Your turn" on Home, open the
+    list of waiting questions (`needsSheet`) instead of jumping to a chat, where older questions were outside the
+    loaded messages. From Home, the list shows the chosen question.
+  - Question and approval cards have "Close without answering". The list shows when each was asked and "Close the n
+    older than a day" (with a confirmation).
+  - `POST /api/questions/dismiss` (`{"ids": [...]}`) → `chat.dismiss`: the card becomes `dismissed` with
+    `dismissed_at`. The bot is not told and an approval's action is not run (its `authorization` becomes
+    `cancelled`). Cards that are no longer open are left as they are.
+- Why: the owner asked for all three (2026-11-23).
+- Tests: `tests/test_question_dismiss.py`, `tests/fix1123_ui.mjs`.
+
 ## 2026-11-22 Version 1.1.6: the decision watch is on by default
 
 - `decision_watch.enabled` is now `True` in config and in `decision_watch.DEFAULTS`, so the watch runs without

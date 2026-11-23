@@ -76,7 +76,7 @@ source = source.replace("  start();\n})();", `
     chats: () => { let body; screen = (_, b) => { body = b; }; renderChats(); return body; },
     home: () => { let body; screen = (_, b) => { body = b; }; renderHomeUsage = () => {}; renderHome(); return body; },
     dashboard: () => { let body; screen = (_, b) => { body = b; }; renderUsageCard = () => {}; renderDashboard(); return body; },
-    browser: (sid) => { let body; screen = (_, b) => { body = b; }; renderBrowser(sid); return body; }, closeBrowserStream
+    browser: (sid) => { let body; screen = (_, b) => { body = b; }; renderBrowser(sid); return body; }, closeBrowserStream, screen0: screen, dismissQuestions
   };
 })();`);
 vm.runInContext(source, context);

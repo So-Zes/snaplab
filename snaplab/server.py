@@ -805,6 +805,9 @@ class Handler(BaseHTTPRequestHandler):
             return {"room": app.create_group(s("name"), b.get("bots") or [])}
         if m := re.fullmatch(rf"/api/rooms/({ID})", path):
             return {"room": app.update_room(m.group(1), b)}
+        if path == "/api/questions/dismiss":
+            ids = [str(x) for x in (b.get("ids") or []) if isinstance(x, str)]
+            return {"questions": [app.chat.question_view(q) for q in app.chat.dismiss(ids)]}
         if m := re.fullmatch(rf"/api/questions/({ID})/answer", path):
             return {"question": app.chat.question_view(app.chat.answer(m.group(1), s("text")))}
         if path == "/api/bots":

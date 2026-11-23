@@ -789,6 +789,15 @@ html:lang(ja) .lead-badge { text-transform: none; letter-spacing: 0; }
 .needs-from { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 650; color: var(--muted); }
 .needs-from .ic { width: 14px; height: 14px; }
 .needs-q .qcard { max-width: none; }
+/* 2026-11-23: when it was asked, closing a card without answering, and closing the older ones at once */
+.needs-when { font-weight: 500; }
+.needs-when::before { content: "·"; margin-right: 6px; }
+.needs-dismiss-old { align-self: flex-start; }
+.qcard-dismiss { align-self: flex-start; color: var(--muted); }
+.qcard-a.closed .ic { color: var(--muted); }
+/* A screen drawn again with new data (screen() adds .again) does not replay its entrance animations. */
+#app.again .page, #app.again .widget, #app.again .q-banner, #app.again .tab.on::before, #app.again .needs-pill.show,
+#app.again .fab, #app.again .chat-actions, #app.again .qcard, #app.again .result-card, #app.again .try { animation: none; }
 .needs-empty { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 26px 0 10px; color: var(--muted); }
 .needs-empty img { width: 84px; animation: bob 4s ease-in-out infinite; }
 .needs-card { border-color: color-mix(in srgb, var(--warn) 30%, var(--line)); background: linear-gradient(180deg, color-mix(in srgb, var(--warn) 6%, var(--surface)), var(--surface) 60%); }
